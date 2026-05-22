@@ -90,7 +90,6 @@ src/api/private.ts
 .env
 env.d.ts
 
-
 # Scrap/Zombie folders from Android builds
 node_modules_react-native*
 node_modules_*

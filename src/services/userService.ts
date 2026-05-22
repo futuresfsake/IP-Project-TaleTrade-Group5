@@ -71,7 +71,6 @@ export const getUsername = async (uid: string) => {
  * Updates the user's profile image URL in Firestore.
  */
 export const updateUserProfileImage = async (uid: string, imageUrl: string) => {
-  // Lead Dev Patch: Ensure Protocol Compliance
   const secureUrl = imageUrl.replace('http://', 'https://');
   
   try {
@@ -79,7 +78,7 @@ export const updateUserProfileImage = async (uid: string, imageUrl: string) => {
       .collection('Users')
       .doc(uid)
       .set({
-        photoURL: secureUrl, // Save the secure version
+        photoURL: secureUrl,
         lastUpdated: firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
   } catch (error) {
