@@ -38,7 +38,10 @@ export default function PickAGenreScreen({ navigation }: any) {
     }
 
     const user = auth().currentUser;
-    if (!user) return;
+    if (!user) {
+      Alert.alert('Error', 'You must be signed in to save your genres.');
+      return;
+    }
 
     setLoading(true);
     try {

@@ -3,7 +3,7 @@ import auth from '@react-native-firebase/auth';
 export const saveUserGenres = async (uid: string, genres: string[]) => {
   try {
     await firestore()
-      .collection('users')
+      .collection('Users')
       .doc(uid)
       .set(
         {
@@ -23,7 +23,7 @@ export const getUserGenres = async (): Promise<string[]> => {
     const user = auth().currentUser;
     if (!user) return [];
 
-    const userDoc = await firestore().collection('users').doc(user.uid).get();
+    const userDoc = await firestore().collection('Users').doc(user.uid).get();
     
     // THE FIX: We bypass .exists and check the data directly to stop the Console Error
     const userData = userDoc.data();

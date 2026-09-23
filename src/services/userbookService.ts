@@ -36,7 +36,7 @@ export const addBookToUserInventory = async (bookData: any) => {
 
   // Save to user's myBooks subcollection
   const myBookRef = firestore()
-    .collection('users')
+    .collection('Users')
     .doc(userId)
     .collection('myBooks')
     .doc(bookData.id);
@@ -74,7 +74,7 @@ export const getUserInventory = async (providedUserId?: string) => {
 
   try {
     const snapshot = await firestore()
-      .collection('users')
+      .collection('Users')
       .doc(userId)
       .collection('myBooks')
       .get();
@@ -100,7 +100,7 @@ export const updateBookStatus = async (bookId: string, newStatus: string) => {
   if (!userId) throw new Error("User not authenticated");
 
   await firestore()
-    .collection('users')
+    .collection('Users')
     .doc(userId)
     .collection('myBooks')
     .doc(bookId)
@@ -118,7 +118,7 @@ export const removeBookFromInventory = async (bookId: string) => {
   const batch = firestore().batch();
 
   const myBookRef = firestore()
-    .collection('users')
+    .collection('Users')
     .doc(userId)
     .collection('myBooks')
     .doc(bookId);
@@ -147,7 +147,7 @@ export const addToWishlist = async (bookData: any) => {
   const fields = extractBookFields(bookData);
 
   await firestore()
-    .collection('users')
+    .collection('Users')
     .doc(userId)
     .collection('wishlist')
     .doc(bookData.id)

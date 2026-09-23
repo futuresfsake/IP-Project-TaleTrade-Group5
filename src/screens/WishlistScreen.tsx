@@ -26,7 +26,7 @@ export default function WishlistScreen({ navigation }: any) {
     if (!userId) { setLoading(false); return; }
 
     const unsubscribe = firestore()
-      .collection('users').doc(userId).collection('wishlist')
+      .collection('Users').doc(userId).collection('wishlist')
       .onSnapshot((snapshot) => {
         if (snapshot) {
           setBooks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -44,7 +44,7 @@ export default function WishlistScreen({ navigation }: any) {
         text: 'Remove', style: 'destructive',
         onPress: async () => {
           const userId = auth().currentUser?.uid;
-          if (userId) await firestore().collection('users').doc(userId).collection('wishlist').doc(bookId).delete();
+          if (userId) await firestore().collection('Users').doc(userId).collection('wishlist').doc(bookId).delete();
         }
       }
     ]);
