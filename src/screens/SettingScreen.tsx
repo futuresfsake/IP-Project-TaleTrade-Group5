@@ -11,6 +11,10 @@ import firestore from '@react-native-firebase/firestore';
 import { updateUserInDb, getUserProfile, updateUserBio, updateUserProfileImage, updateUserSocialLink } from '../services/userService';
 import { launchImageLibrary } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET } from '@env';
+
+// Then in your fetch:
+// const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload` ...);
 
 const COLORS = {
   primaryBlue: '#4A68BE',
@@ -82,13 +86,49 @@ const SettingScreen = ({ navigation }: any) => {
 
   const handleSavePhoto = async () => {
     const user = auth().currentUser;
+    
+    // 1. Check if we have a temporary image to upload
     if (tempImage && user) {
       try {
-        await updateUserProfileImage(user.uid, tempImage);
-        setProfileImage(tempImage);
-        Alert.alert("Success! ✨", "Profile picture updated.");
+        // Create the form data for the cloud upload
+        const data = new FormData();
+        data.append('file', {
+          uri: tempImage,
+          type: 'image/jpeg',
+          name: 'profile.jpg',
+        } as any);
+        
+        // Use your newly created preset and cloud name
+        data.append('upload_preset', 'TaleTrade'); 
+        const cloudName = 'dg4xa8pjg'; 
+
+        // 2. Perform the upload to Cloudinary
+        const response = await fetch(
+          `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+          {
+            method: 'POST',
+            body: data,
+          }
+        );
+
+        const result = await response.json();
+        
+        if (result.secure_url) {
+          // 3. Save the permanent HTTPS URL to Firestore
+          await updateUserProfileImage(user.uid, result.secure_url);
+          
+          // Update local state so the UI reflects the saved image
+          setProfileImage(result.secure_url);
+          
+          Alert.alert("Success! ✨", "Profile picture is now saved.");
+        } else {
+          // Log the error if Cloudinary returns one (e.g., preset name typo)
+          console.error("Cloudinary Error:", result);
+          throw new Error("Upload failed");
+        }
       } catch (error) {
-        Alert.alert("Error", "Failed to save image.");
+        console.error("Save Error:", error);
+        Alert.alert("Error", "Cloud upload failed. Please check your internet connection.");
       }
     }
   };

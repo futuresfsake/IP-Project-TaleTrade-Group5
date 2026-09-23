@@ -26,7 +26,6 @@ const ProfileScreen = ({ navigation, route }: any) => {
   const [socialLink, setSocialLink] = useState<string | null>(null);
 
   const visitedUserId = route?.params?.userId;
-  // FLAG TO HIDE HEADER
   const hideHeader = route?.params?.hideHeader; 
   
   const currentUid = auth().currentUser?.uid;
@@ -116,7 +115,14 @@ const ProfileScreen = ({ navigation, route }: any) => {
             <View style={styles.avatarContainer}>
                 <View style={styles.avatarCircle}>
                 {profileImage ? (
-                  <Image source={{ uri: profileImage }} style={styles.profileImage} />
+                  <Image 
+                    source={{ 
+                      uri: profileImage.startsWith('http://') 
+                        ? profileImage.replace('http://', 'https://') 
+                        : profileImage 
+                    }} 
+                    style={styles.profileImage} 
+                  />
                 ) : (
                   <Text style={styles.avatarInitials}>{initials}</Text>
                 )}
@@ -144,18 +150,8 @@ const ProfileScreen = ({ navigation, route }: any) => {
           </View>
 
           <View style={styles.menuContainer}>
-            <Text style={styles.menuTitle}>Library & Social</Text>
-            {isOwnProfile && (
-                <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('MyBooks')}>
-                    <View style={styles.menuItemLeft}>
-                        <View style={styles.iconBackground}>
-                          <BookOpen color={COLORS.softPurple} size={18} />
-                        </View>
-                        <Text style={styles.menuItemLabel}>My Saved Tales</Text>
-                    </View>
-                    <ChevronRight color="#CCCCCC" size={18} />
-                </TouchableOpacity>
-            )}
+            <Text style={styles.menuTitle}>Socials</Text>
+            
             {socialLink ? (
                 <TouchableOpacity style={styles.menuItem} onPress={handleContactPress}>
                     <View style={styles.menuItemLeft}>
