@@ -6,8 +6,8 @@ import {
   Linking, PermissionsAndroid 
 } from 'react-native';
 import { ChevronLeft, User, Trash2, Save, Camera, CheckCircle, AlignLeft, LogOut } from 'lucide-react-native';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import { getAuth, signOut as firebaseSignOut, deleteUser } from '@react-native-firebase/auth';
+import { getFirestore, doc, deleteDoc } from '@react-native-firebase/firestore';
 import { updateUserInDb, getUserProfile, updateUserBio, updateUserProfileImage, updateUserSocialLink } from '../services/userService';
 import { launchImageLibrary } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -39,7 +39,7 @@ const SettingScreen = ({ navigation }: any) => {
   }, []);
 
   const loadUserData = async () => {
-    const user = auth().currentUser;
+    const user = getAuth().currentUser;
     if (user) {
       const userData = await getUserProfile(user.uid);
       if (userData) {
@@ -85,8 +85,8 @@ const SettingScreen = ({ navigation }: any) => {
   };
 
   const handleSavePhoto = async () => {
-    const user = auth().currentUser;
-    
+    const user = getAuth().currentUser;
+
     // 1. Check if we have a temporary image to upload
     if (tempImage && user) {
       try {
@@ -134,9 +134,9 @@ const SettingScreen = ({ navigation }: any) => {
   };
 
   const handleUpdateProfile = async () => {
-    const user = auth().currentUser;
+    const user = getAuth().currentUser;
     if (!user) return;
-    
+
     if (newName.trim().length < 3) {
       Alert.alert("Error", "Username is too short!");
       return;
@@ -158,20 +158,20 @@ const SettingScreen = ({ navigation }: any) => {
   const handleLogout = () => {
     Alert.alert("Log Out", "Are you sure? 🥺", [
       { text: "Stay", style: "cancel" },
-      { text: "Log Out", style: "destructive", onPress: () => auth().signOut() }
+      { text: "Log Out", style: "destructive", onPress: () => firebaseSignOut(getAuth()) }
     ]);
   };
 
   const handleDeleteAccount = () => {
-    const user = auth().currentUser;
+    const user = getAuth().currentUser;
     if (!user) return;
     Alert.alert("Wait! 🥺", "This will delete your account permanently. Proceed?", [
       { text: "Cancel", style: "cancel" },
       { text: "Delete Everything", style: "destructive", onPress: async () => {
         try {
-          await firestore().collection('Users').doc(user.uid).delete();
+          await deleteDoc(doc(getFirestore(), 'Users', user.uid));
           await AsyncStorage.removeItem('user_profile_image');
-          await user.delete();
+          await deleteUser(user);
         } catch (e) { 
           Alert.alert("Security Check", "Please log out and log back in before deleting."); 
         }

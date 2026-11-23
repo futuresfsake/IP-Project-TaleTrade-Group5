@@ -3,8 +3,8 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   SafeAreaView, ActivityIndicator, Image, Alert
 } from 'react-native';
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
+import { getFirestore, collection, doc, deleteDoc, onSnapshot } from '@react-native-firebase/firestore';
+import { getAuth } from '@react-native-firebase/auth';
 import { Heart, Trash2 } from 'lucide-react-native';
 
 const reconstructBookData = (item: any) => ({
@@ -22,17 +22,18 @@ export default function WishlistScreen({ navigation }: any) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const userId = auth().currentUser?.uid;
+    const userId = getAuth().currentUser?.uid;
     if (!userId) { setLoading(false); return; }
 
-    const unsubscribe = firestore()
-      .collection('Users').doc(userId).collection('wishlist')
-      .onSnapshot((snapshot) => {
+    const unsubscribe = onSnapshot(
+      collection(getFirestore(), 'Users', userId, 'wishlist'),
+      (snapshot) => {
         if (snapshot) {
           setBooks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         }
         setLoading(false);
-      });
+      },
+    );
 
     return () => unsubscribe();
   }, []);
@@ -43,8 +44,8 @@ export default function WishlistScreen({ navigation }: any) {
       {
         text: 'Remove', style: 'destructive',
         onPress: async () => {
-          const userId = auth().currentUser?.uid;
-          if (userId) await firestore().collection('Users').doc(userId).collection('wishlist').doc(bookId).delete();
+          const userId = getAuth().currentUser?.uid;
+          if (userId) await deleteDoc(doc(getFirestore(), 'Users', userId, 'wishlist', bookId));
         }
       }
     ]);

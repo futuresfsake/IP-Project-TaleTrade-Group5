@@ -4,7 +4,7 @@ import {
   ScrollView, Platform, StatusBar, Image, Linking, Alert 
 } from 'react-native';
 import { Settings, BookOpen, ChevronRight, Send, Mail } from 'lucide-react-native';
-import auth from '@react-native-firebase/auth';
+import { getAuth } from '@react-native-firebase/auth';
 import { useIsFocused } from '@react-navigation/native';
 import { getUserProfile } from '../services/userService';
 import { getUserInventory } from '../services/userbookService';
@@ -28,7 +28,7 @@ const ProfileScreen = ({ navigation, route }: any) => {
   const visitedUserId = route?.params?.userId;
   const hideHeader = route?.params?.hideHeader; 
   
-  const currentUid = auth().currentUser?.uid;
+  const currentUid = getAuth().currentUser?.uid;
   const targetUid = visitedUserId || currentUid;
   const isOwnProfile = !visitedUserId || visitedUserId === currentUid;
 

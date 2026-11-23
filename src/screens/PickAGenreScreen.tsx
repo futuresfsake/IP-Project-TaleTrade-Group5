@@ -9,7 +9,7 @@ import {
   ActivityIndicator, 
   Alert
 } from 'react-native';
-import auth from '@react-native-firebase/auth';
+import { getAuth, updateProfile, reload } from '@react-native-firebase/auth';
 import { saveUserGenres } from '../services/genreService';
 import { getUsername } from '../services/userService';
 
@@ -37,7 +37,7 @@ export default function PickAGenreScreen({ navigation }: any) {
       return;
     }
 
-    const user = auth().currentUser;
+    const user = getAuth().currentUser;
     if (!user) {
       Alert.alert('Error', 'You must be signed in to save your genres.');
       return;
@@ -53,12 +53,11 @@ export default function PickAGenreScreen({ navigation }: any) {
 
       // 3. Update the Firebase Auth Profile. 
       // This is what App.tsx is watching to decide when to show the Home Screen.
-      await user.updateProfile({
-        displayName: dbUsername || "Explorer" 
+      await updateProfile(user, {
+        displayName: dbUsername || "Explorer"
       });
 
-      // 4. Force a reload so the local user object updates its displayName
-      await user.reload();
+      await reload(user);
 
       /* 
          STRICT RULE: No navigation.navigate('AppTabs') here. 

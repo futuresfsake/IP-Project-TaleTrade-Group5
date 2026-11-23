@@ -1,32 +1,24 @@
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
+import { getFirestore, doc, setDoc, getDoc } from '@react-native-firebase/firestore';
+import { getAuth } from '@react-native-firebase/auth';
+
 export const saveUserGenres = async (uid: string, genres: string[]) => {
   try {
-    await firestore()
-      .collection('Users')
-      .doc(uid)
-      .set(
-        {
-          genres: genres,
-        },
-        { merge: true }
-      );
+    await setDoc(doc(getFirestore(), 'Users', uid), {
+      genres: genres,
+    }, { merge: true });
   } catch (error) {
     console.error('Error saving genres:', error);
     throw error;
   }
 };
 
-
 export const getUserGenres = async (): Promise<string[]> => {
   try {
-    const user = auth().currentUser;
+    const user = getAuth().currentUser;
     if (!user) return [];
 
-    const userDoc = await firestore().collection('Users').doc(user.uid).get();
-    
-    // THE FIX: We bypass .exists and check the data directly to stop the Console Error
-    const userData = userDoc.data();
+    const snapshot = await getDoc(doc(getFirestore(), 'Users', user.uid));
+    const userData = snapshot.data();
     if (userData && userData.genres) {
       return userData.genres;
     }

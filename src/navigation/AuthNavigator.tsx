@@ -10,7 +10,6 @@ import ProfileScreen from '../screens/ProfileScreen';
 import SettingScreen from '../screens/SettingScreen';
 
 import PickAGenreScreen from '../screens/PickAGenreScreen'; // Import the new screen
-import auth from '@react-native-firebase/auth'; // Summoning the SDK "brains"
 
 const Stack = createNativeStackNavigator();
 

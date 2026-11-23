@@ -1,16 +1,14 @@
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp } from '@react-native-firebase/firestore';
+import { getAuth } from '@react-native-firebase/auth';
 
 const extractBookFields = (bookData: any) => {
-  // If volumeInfo exists, use it. If not, the object is already flat.
-  const v = bookData.volumeInfo || bookData; 
-  
+  const v = bookData.volumeInfo || bookData;
+
   return {
     bookId: bookData.id || bookData.bookId,
     title: v.title || 'Untitled',
-    // Handle authors as an array or a pre-joined string
-    author: Array.isArray(v.authors) 
-      ? v.authors.join(', ') 
+    author: Array.isArray(v.authors)
+      ? v.authors.join(', ')
       : (v.author || 'Unknown Author'),
     thumbnail: v.imageLinks?.thumbnail?.replace('http://', 'https://') || v.thumbnail || null,
     description: v.description || '',
@@ -22,67 +20,41 @@ const extractBookFields = (bookData: any) => {
   };
 };
 
-/**
- * 1. CREATE: Add a book to the user's shelf.
- * Also registers ownership in top-level 'bookOwners' collection
- * so getBookOwners works WITHOUT needing a Firestore index.
- */
 export const addBookToUserInventory = async (bookData: any) => {
-  const userId = auth().currentUser?.uid;
+  const userId = getAuth().currentUser?.uid;
   if (!userId) throw new Error("User not authenticated");
 
+  const db = getFirestore();
   const fields = extractBookFields(bookData);
-  const batch = firestore().batch();
+  const batch = writeBatch(db);
 
-  // Save to user's myBooks subcollection
-  const myBookRef = firestore()
-    .collection('Users')
-    .doc(userId)
-    .collection('myBooks')
-    .doc(bookData.id);
-
+  const myBookRef = doc(db, 'Users', userId, 'myBooks', bookData.id);
   batch.set(myBookRef, {
     ...fields,
     status: 'owned',
-    addedAt: firestore.FieldValue.serverTimestamp(),
+    addedAt: serverTimestamp(),
   });
 
-  // Also register in flat top-level 'bookOwners' collection
-  // Structure: bookOwners/{bookId}/owners/{userId}
-  const ownerRef = firestore()
-    .collection('bookOwners')
-    .doc(bookData.id)
-    .collection('owners')
-    .doc(userId);
-
+  const ownerRef = doc(db, 'bookOwners', bookData.id, 'owners', userId);
   batch.set(ownerRef, {
     userId,
-    addedAt: firestore.FieldValue.serverTimestamp(),
+    addedAt: serverTimestamp(),
   });
 
   await batch.commit();
 };
 
-/**
- * 2. READ: Fetch all books owned by a specific user or the current user.
- * Accepting an optional userId fixes the TS(2554) error.
- */
 export const getUserInventory = async (providedUserId?: string) => {
-  // Use the passed ID if it exists, otherwise fallback to the current authenticated user
-  const userId = providedUserId || auth().currentUser?.uid;
+  const userId = providedUserId || getAuth().currentUser?.uid;
   if (!userId) return [];
 
   try {
-    const snapshot = await firestore()
-      .collection('Users')
-      .doc(userId)
-      .collection('myBooks')
-      .get();
+    const snapshot = await getDocs(collection(getFirestore(), 'Users', userId, 'myBooks'));
 
     if (snapshot && !snapshot.empty) {
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
+      return snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
       }));
     }
     return [];
@@ -92,104 +64,58 @@ export const getUserInventory = async (providedUserId?: string) => {
   }
 };
 
-/**
- * 3. UPDATE: Change book status.
- */
 export const updateBookStatus = async (bookId: string, newStatus: string) => {
-  const userId = auth().currentUser?.uid;
+  const userId = getAuth().currentUser?.uid;
   if (!userId) throw new Error("User not authenticated");
 
-  await firestore()
-    .collection('Users')
-    .doc(userId)
-    .collection('myBooks')
-    .doc(bookId)
-    .update({ status: newStatus });
+  await updateDoc(doc(getFirestore(), 'Users', userId, 'myBooks', bookId), { status: newStatus });
 };
 
-/**
- * 4. DELETE: Remove a book from the user's shelf.
- * Also removes from bookOwners so the social list stays accurate.
- */
 export const removeBookFromInventory = async (bookId: string) => {
-  const userId = auth().currentUser?.uid;
+  const userId = getAuth().currentUser?.uid;
   if (!userId) throw new Error("User not authenticated");
 
-  const batch = firestore().batch();
+  const db = getFirestore();
+  const batch = writeBatch(db);
 
-  const myBookRef = firestore()
-    .collection('Users')
-    .doc(userId)
-    .collection('myBooks')
-    .doc(bookId);
-
-  batch.delete(myBookRef);
-
-  // Also remove from bookOwners
-  const ownerRef = firestore()
-    .collection('bookOwners')
-    .doc(bookId)
-    .collection('owners')
-    .doc(userId);
-
-  batch.delete(ownerRef);
+  batch.delete(doc(db, 'Users', userId, 'myBooks', bookId));
+  batch.delete(doc(db, 'bookOwners', bookId, 'owners', userId));
 
   await batch.commit();
 };
 
-/**
- * 5. WISHLIST: Add to wishlist with flat fields.
- */
 export const addToWishlist = async (bookData: any) => {
-  const userId = auth().currentUser?.uid;
+  const userId = getAuth().currentUser?.uid;
   if (!userId) throw new Error("User not authenticated");
 
   const fields = extractBookFields(bookData);
 
-  await firestore()
-    .collection('Users')
-    .doc(userId)
-    .collection('wishlist')
-    .doc(bookData.id)
-    .set({
-      ...fields,
-      addedAt: firestore.FieldValue.serverTimestamp(),
-    });
+  await setDoc(doc(getFirestore(), 'Users', userId, 'wishlist', bookData.id), {
+    ...fields,
+    addedAt: serverTimestamp(),
+  });
 };
 
-/**
- * 6. READ OWNERS: Uses flat 'bookOwners' collection.
- * NO collectionGroup = NO manual index needed.
- * Profile data pulled from 'Users' (capital U) matching your authService.
- */
 export const getBookOwners = async (bookId: string) => {
   if (!bookId || typeof bookId !== 'string') {
     console.log("getBookOwners blocked: Missing or invalid bookId string path coordinate.");
     return [];
   }
-  const currentUserId = auth().currentUser?.uid;
+  const currentUserId = getAuth().currentUser?.uid;
+  const db = getFirestore();
 
   try {
-    const snapshot = await firestore()
-      .collection('bookOwners')
-      .doc(bookId)
-      .collection('owners')
-      .get();
+    const snapshot = await getDocs(collection(db, 'bookOwners', bookId, 'owners'));
 
     if (snapshot.empty) return [];
 
     const uniqueOwnersMap = new Map();
 
     await Promise.all(
-      snapshot.docs.map(async (doc) => {
-        const { userId } = doc.data();
+      snapshot.docs.map(async (d) => {
+        const { userId } = d.data();
         if (!uniqueOwnersMap.has(userId)) {
-          // Pull profile from 'Users' (capital U) — matches your authService.ts
-          const userDoc = await firestore()
-            .collection('Users')
-            .doc(userId)
-            .get();
-
+          const userDoc = await getDoc(doc(db, 'Users', userId));
           const userData = userDoc.data();
           const isMe = userId === currentUserId;
 
@@ -198,15 +124,13 @@ export const getBookOwners = async (bookId: string) => {
             username: isMe
               ? "You"
               : (userData?.username || userData?.displayName || 'Anonymous'),
-            // CHANGE THIS LINE: from userData?.profilePic to userData?.photoURL
-            photo: userData?.photoURL || null, 
+            photo: userData?.photoURL || null,
             isMe,
           });
         }
       })
     );
 
-    // Sort so current user appears first
     const owners = Array.from(uniqueOwnersMap.values());
     return owners.sort((a, b) => (b.isMe ? 1 : 0) - (a.isMe ? 1 : 0));
 

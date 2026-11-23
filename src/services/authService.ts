@@ -1,21 +1,18 @@
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from '@react-native-firebase/auth';
+import { getFirestore, doc, setDoc, serverTimestamp } from '@react-native-firebase/firestore';
 
 export const registerUser = async (email: string, password: string, username: string, birthday: string) => {
   try {
-    // 1. Create the user account in Firebase Auth
-    const userCredential = await auth().createUserWithEmailAndPassword(email, password);
+    const userCredential = await createUserWithEmailAndPassword(getAuth(), email, password);
     const { uid } = userCredential.user;
 
-    // 2. Store the User data in Firestore
-    await firestore().collection('Users').doc(uid).set({
+    await setDoc(doc(getFirestore(), 'Users', uid), {
       username: username,
       email: email,
-      birthday: birthday, 
-      // Initialize bio as an empty string or a default welcome message
-      bio: "Hello! I'm new here and ready to trade tales. 📚", 
-      createdAt: firestore.FieldValue.serverTimestamp(),
-      lastUpdated: firestore.FieldValue.serverTimestamp(),
+      birthday: birthday,
+      bio: "Hello! I'm new here and ready to trade tales.",
+      createdAt: serverTimestamp(),
+      lastUpdated: serverTimestamp(),
     });
 
     return userCredential.user;
@@ -26,42 +23,9 @@ export const registerUser = async (email: string, password: string, username: st
 
 export const loginUser = async (email: string, password: string) => {
   try {
-    const userCredential = await auth().signInWithEmailAndPassword(email, password);
+    const userCredential = await signInWithEmailAndPassword(getAuth(), email, password);
     return userCredential.user;
   } catch (error: any) {
     throw error;
   }
 };
-
-// import auth from '@react-native-firebase/auth';
-// import firestore from '@react-native-firebase/firestore';
-
-// // We define what the parameters are (: string) to fix the red lines
-// export const registerUser = async (email: string, password: string, username: string, birthday: string) => {
-//   try {
-//     // 1. Create the user account in Firebase Auth
-//     const userCredential = await auth().createUserWithEmailAndPassword(email, password);
-//     const { uid } = userCredential.user;
-
-//     // 2. Store the Username in the Firestore 'Users' collection
-//     await firestore().collection('Users').doc(uid).set({
-//       username: username,
-//       email: email,
-//       birthday: birthday, 
-//       createdAt: firestore.FieldValue.serverTimestamp(),
-//     });
-
-//     return userCredential.user;
-//   } catch (error: any) {
-//     throw error;
-//   }
-// };
-
-// export const loginUser = async (email: string, password: string) => {
-//   try {
-//     const userCredential = await auth().signInWithEmailAndPassword(email, password);
-//     return userCredential.user;
-//   } catch (error: any) {
-//     throw error;
-//   }
-// };

@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth'; 
+import { getAuth, onAuthStateChanged, onIdTokenChanged, FirebaseAuthTypes } from '@react-native-firebase/auth';
 
-// Navigators & Screens
 import { AuthNavigator } from './src/navigation/AuthNavigator';
 import TabNavigator from './src/navigation/TabNavigator';
 import PickAGenreScreen from './src/screens/PickAGenreScreen';
@@ -19,12 +18,14 @@ const App = () => {
   const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
 
   useEffect(() => {
-    const authSubscriber = auth().onAuthStateChanged((userState) => {
+    const auth = getAuth();
+
+    const authSubscriber = onAuthStateChanged(auth, (userState) => {
       setUser(userState);
       if (initializing) setInitializing(false);
     });
 
-    const userSubscriber = auth().onUserChanged((userState) => {
+    const userSubscriber = onIdTokenChanged(auth, (userState) => {
       if (userState) setUser(userState);
     });
 

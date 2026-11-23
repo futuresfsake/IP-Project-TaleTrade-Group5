@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ScrollView, View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
-import auth from '@react-native-firebase/auth';
+import { getAuth } from '@react-native-firebase/auth';
 import { fetchBooksByGenre } from '../services/bookService';
 import { getUserGenres } from '../services/genreService'; 
 import { getUsername } from '../services/userService';
@@ -17,7 +17,7 @@ const HomeScreen = ({ navigation }: any) => {
     const loadAllData = async () => {
       try {
         setLoading(true);
-        const user = auth().currentUser;
+        const user = getAuth().currentUser;
         if (user) {
           const name = await getUsername(user.uid);
           setUserName(name || 'Reader');
@@ -25,10 +25,10 @@ const HomeScreen = ({ navigation }: any) => {
         const userPrefs = await getUserGenres();
         const recQuery = (userPrefs && userPrefs.length > 0) ? userPrefs[0] : 'fiction';
         const data: {[key: string]: any[]} = {};
-        await Promise.all(GENRES.map(async (genre) => {
-            let query = genre === 'Recommended' ? recQuery : genre;
-            data[genre] = await fetchBooksByGenre(query);
-        }));
+        for (const genre of GENRES) {
+          const query = genre === 'Recommended' ? recQuery : genre;
+          data[genre] = await fetchBooksByGenre(query);
+        }
         setSections(data);
       } catch (error) { console.error(error); } 
       finally { setLoading(false); }

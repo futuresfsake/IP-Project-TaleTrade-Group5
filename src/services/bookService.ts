@@ -9,23 +9,25 @@ import { GOOGLE_BOOKS_API_KEY } from '@env';
 
 const BASE_URL = 'https://www.googleapis.com/books/v1/volumes';
 
-// // src/services/googleBooksService.ts
-// export const fetchBooksByGenre = async (genre: string, maxResults = 10) => {
-//   try {
-//     const response = await fetch(
-//       `${BASE_URL}?q=subject:${genre}&maxResults=${maxResults}&key=${GOOGLE_BOOKS_API_KEY}`
-//     );
-//     const data = await response.json();
-//     return data.items || [];
-//   } catch (error) {
-//     console.error("Fetch Error:", error);
-//     return [];
-//   }
-// };
+const GENRE_QUERY_MAP: {[key: string]: string} = {
+  'Contemporary': 'contemporary fiction',
+  'Memoir': 'memoir books',
+  'Dystopian': 'dystopian fiction',
+  'Self-Help': 'self help books',
+  'Paranormal': 'paranormal romance',
+  'Classics': 'classic literature',
+  'Graphic Novel': 'graphic novels',
+  'Thriller & Suspense': 'thriller suspense',
+  'Fantasy': 'fantasy fiction',
+  'Mystery': 'mystery fiction',
+  'Historical Fiction': 'historical fiction',
+};
+
 export const fetchBooksByGenre = async (genre: string, maxResults = 10) => {
   try {
+    const query = GENRE_QUERY_MAP[genre] || genre;
     const response = await fetch(
-      `${BASE_URL}?q=subject:${genre}&maxResults=${maxResults}&key=${GOOGLE_BOOKS_API_KEY}`
+      `${BASE_URL}?q=${encodeURIComponent(query)}&maxResults=${maxResults}&key=${GOOGLE_BOOKS_API_KEY}`
     );
     const data = await response.json();
     
