@@ -43,7 +43,7 @@ export const getUsername = async (uid: string) => {
   try {
     const snapshot = await getDoc(doc(getFirestore(), 'Users', uid));
     return snapshot.exists() ? snapshot.data()?.username : null;
-  } catch (error) {
+  } catch {
     return null;
   }
 };

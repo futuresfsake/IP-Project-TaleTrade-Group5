@@ -1,5 +1,6 @@
-import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp } from '@react-native-firebase/firestore';
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, writeBatch, serverTimestamp } from '@react-native-firebase/firestore';
 import { getAuth } from '@react-native-firebase/auth';
+import { buildOwnerFields, getPreferredSpots } from './map/meetupService';
 
 const extractBookFields = (bookData: any) => {
   const v = bookData.volumeInfo || bookData;
@@ -35,9 +36,10 @@ export const addBookToUserInventory = async (bookData: any) => {
     addedAt: serverTimestamp(),
   });
 
+  const spotIds = await getPreferredSpots(userId);
   const ownerRef = doc(db, 'bookOwners', bookData.id, 'owners', userId);
   batch.set(ownerRef, {
-    userId,
+    ...buildOwnerFields(userId, bookData.id, fields, spotIds),
     addedAt: serverTimestamp(),
   });
 
@@ -113,7 +115,7 @@ export const getBookOwners = async (bookId: string) => {
 
     await Promise.all(
       snapshot.docs.map(async (d) => {
-        const { userId } = d.data();
+        const { userId, spotIds } = d.data();
         if (!uniqueOwnersMap.has(userId)) {
           const userDoc = await getDoc(doc(db, 'Users', userId));
           const userData = userDoc.data();
@@ -126,6 +128,7 @@ export const getBookOwners = async (bookId: string) => {
               : (userData?.username || userData?.displayName || 'Anonymous'),
             photo: userData?.photoURL || null,
             isMe,
+            spotIds: Array.isArray(spotIds) ? spotIds : [],
           });
         }
       })

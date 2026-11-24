@@ -5,10 +5,12 @@ import {
   Platform, StatusBar as RNStatusBar, Image,
   Linking, PermissionsAndroid 
 } from 'react-native';
-import { ChevronLeft, User, Trash2, Save, Camera, CheckCircle, AlignLeft, LogOut } from 'lucide-react-native';
+import { ChevronLeft, User, Trash2, Save, Camera, CheckCircle, AlignLeft, LogOut, MapPin } from 'lucide-react-native';
 import { getAuth, signOut as firebaseSignOut, deleteUser } from '@react-native-firebase/auth';
-import { getFirestore, doc, deleteDoc } from '@react-native-firebase/firestore';
+import { getFirestore, doc, collection, getDocs, writeBatch } from '@react-native-firebase/firestore';
 import { updateUserInDb, getUserProfile, updateUserBio, updateUserProfileImage, updateUserSocialLink } from '../services/userService';
+import { getActiveSpots, setPreferredSpots, toggleSpotSelection, MAX_PREFERRED_SPOTS } from '../services/map/meetupService';
+import type { MeetupSpot } from '../types';
 import { launchImageLibrary } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET } from '@env';
@@ -33,6 +35,10 @@ const SettingScreen = ({ navigation }: any) => {
   const [newSocialLink, setNewSocialLink] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [tempImage, setTempImage] = useState<string | null>(null);
+  const [spots, setSpots] = useState<MeetupSpot[]>([]);
+  const [selectedSpots, setSelectedSpots] = useState<string[]>([]);
+  const [spotLimitHit, setSpotLimitHit] = useState(false);
+  const [savingSpots, setSavingSpots] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -41,7 +47,20 @@ const SettingScreen = ({ navigation }: any) => {
   const loadUserData = async () => {
     const user = getAuth().currentUser;
     if (user) {
-      const userData = await getUserProfile(user.uid);
+      const [userData, activeSpots] = await Promise.all([
+        getUserProfile(user.uid),
+        getActiveSpots().catch((): MeetupSpot[] | null => null),
+      ]);
+      const saved: string[] = Array.isArray(userData?.preferredSpots) ? userData.preferredSpots : [];
+      if (activeSpots) {
+        setSpots(activeSpots);
+        // Drop saved picks that are no longer active so they can't be re-saved.
+        const activeIds = new Set(activeSpots.map(s => s.id));
+        setSelectedSpots(saved.filter(id => activeIds.has(id)));
+      } else {
+        // Spots failed to load: keep the saved picks untouched (the card shows its empty state).
+        setSelectedSpots(saved);
+      }
       if (userData) {
         setNewName(userData.username || '');
         setNewBio(userData.bio || '');
@@ -63,7 +82,7 @@ const SettingScreen = ({ navigation }: any) => {
           : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
         const granted = await PermissionsAndroid.request(permission);
         return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } catch (err) { return false; }
+      } catch { return false; }
     }
     return false;
   };
@@ -155,6 +174,27 @@ const SettingScreen = ({ navigation }: any) => {
     }
   };
 
+  const handleToggleSpot = (spotId: string) => {
+    const result = toggleSpotSelection(selectedSpots, spotId);
+    setSelectedSpots(result.spotIds);
+    setSpotLimitHit(result.limitReached);
+  };
+
+  const handleSaveSpots = async () => {
+    const user = getAuth().currentUser;
+    if (!user) return;
+
+    setSavingSpots(true);
+    try {
+      await setPreferredSpots(user.uid, selectedSpots);
+      Alert.alert("Saved!", "Your meetup spots are updated 📍");
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Could not save meetup spots.");
+    } finally {
+      setSavingSpots(false);
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert("Log Out", "Are you sure? 🥺", [
       { text: "Stay", style: "cancel" },
@@ -169,10 +209,36 @@ const SettingScreen = ({ navigation }: any) => {
       { text: "Cancel", style: "cancel" },
       { text: "Delete Everything", style: "destructive", onPress: async () => {
         try {
-          await deleteDoc(doc(getFirestore(), 'Users', user.uid));
+          // Firebase only allows deleting an account shortly after sign-in.
+          // Check first so we never wipe data and then fail to delete the account.
+          const lastSignIn = user.metadata.lastSignInTime
+            ? new Date(user.metadata.lastSignInTime).getTime()
+            : 0;
+          if (Date.now() - lastSignIn > 5 * 60 * 1000) {
+            Alert.alert("Security Check", "Please log out and log back in before deleting.");
+            return;
+          }
+
+          const db = getFirestore();
+          const myBooks = await getDocs(collection(db, 'Users', user.uid, 'myBooks'));
+          const wishlist = await getDocs(collection(db, 'Users', user.uid, 'wishlist'));
+
+          // Batches are limited to 500 writes, so chunk the refs.
+          const refs = [
+            ...myBooks.docs.map(d => d.ref),
+            ...myBooks.docs.map(d => doc(db, 'bookOwners', d.id, 'owners', user.uid)),
+            ...wishlist.docs.map(d => d.ref),
+            doc(db, 'Users', user.uid),
+          ];
+          for (let i = 0; i < refs.length; i += 400) {
+            const batch = writeBatch(db);
+            refs.slice(i, i + 400).forEach(r => batch.delete(r));
+            await batch.commit();
+          }
+
           await AsyncStorage.removeItem('user_profile_image');
           await deleteUser(user);
-        } catch (e) { 
+        } catch { 
           Alert.alert("Security Check", "Please log out and log back in before deleting."); 
         }
       }}
@@ -264,6 +330,54 @@ const SettingScreen = ({ navigation }: any) => {
             </TouchableOpacity>
           </View>
 
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.iconWrapper}><MapPin color={COLORS.softPurple} size={20} /></View>
+              <Text style={styles.sectionTitle}>Where I can meet</Text>
+            </View>
+
+            <Text style={styles.spotHint}>
+              Pick up to {MAX_PREFERRED_SPOTS} public places. Others will see these next to your books.
+            </Text>
+            <Text style={[styles.spotCounter, spotLimitHit && styles.spotLimitText]}>
+              {spotLimitHit
+                ? `You can only pick ${MAX_PREFERRED_SPOTS} spots. Deselect one to choose another.`
+                : `${selectedSpots.length}/${MAX_PREFERRED_SPOTS} selected`}
+            </Text>
+
+            {spots.length === 0 ? (
+              <Text style={styles.spotHint}>No meetup spots are available yet.</Text>
+            ) : (
+              spots.map(spot => {
+                const selected = selectedSpots.includes(spot.id);
+                return (
+                  <TouchableOpacity
+                    key={spot.id}
+                    style={[styles.spotRow, selected && styles.spotRowSelected]}
+                    onPress={() => handleToggleSpot(spot.id)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                  >
+                    <View style={styles.spotInfo}>
+                      <Text style={styles.spotName}>{spot.name}</Text>
+                      <Text style={styles.spotMeta}>{spot.type} · {spot.city}</Text>
+                    </View>
+                    {selected && <CheckCircle color={COLORS.primaryBlue} size={22} />}
+                  </TouchableOpacity>
+                );
+              })
+            )}
+
+            <TouchableOpacity
+              style={[styles.primaryBtn, savingSpots && styles.btnDisabled]}
+              onPress={handleSaveSpots}
+              disabled={savingSpots || spots.length === 0}
+            >
+              <Save color={COLORS.white} size={18} />
+              <Text style={styles.btnText}>{savingSpots ? 'Saving...' : 'Save Meetup Spots'}</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.dangerColumn}>
             <TouchableOpacity style={[styles.dangerBtn, styles.logoutBtn]} onPress={handleLogout}>
               <LogOut color={COLORS.danger} size={18} />
@@ -305,6 +419,15 @@ const styles = StyleSheet.create({
   imagePickerBtnText: { color: COLORS.primaryBlue, fontWeight: '700', fontSize: 14 },
   savePhotoBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 12, backgroundColor: COLORS.success },
   savePhotoBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+  spotHint: { fontSize: 13, color: '#777', marginBottom: 8 },
+  spotCounter: { fontSize: 13, fontWeight: '700', color: COLORS.softPurple, marginBottom: 12 },
+  spotLimitText: { color: COLORS.danger },
+  spotRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.inputBg, padding: 14, borderRadius: 18, marginBottom: 10, borderWidth: 2, borderColor: 'transparent' },
+  spotRowSelected: { borderColor: COLORS.primaryBlue, backgroundColor: '#EEF1FB' },
+  spotInfo: { flex: 1 },
+  spotName: { fontSize: 15, fontWeight: '700', color: '#444' },
+  spotMeta: { fontSize: 12, color: '#888', marginTop: 2, textTransform: 'capitalize' },
+  btnDisabled: { opacity: 0.6 },
   dangerColumn: { marginTop: 10, gap: 15, marginBottom: 30 },
   dangerBtn: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 18, borderRadius: 22, borderWidth: 2, borderColor: COLORS.danger, gap: 10 },
   dangerBtnText: { color: COLORS.danger, fontWeight: '800', fontSize: 16 },

@@ -10,16 +10,13 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
-import Svg, { Path } from 'react-native-svg';
 import { registerUser } from '../../services/authService';
 
 // Manually load the font
 Icon.loadFont();
 
-const { width } = Dimensions.get('window');
 
 const RegisterScreen = ({ navigation }: any) => {
   const [username, setUsername] = useState('');
