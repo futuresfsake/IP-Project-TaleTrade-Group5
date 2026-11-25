@@ -9,7 +9,9 @@ import TabNavigator from './src/navigation/TabNavigator';
 import PickAGenreScreen from './src/screens/PickAGenreScreen';
 import GenreDetailScreen from './src/screens/GenreDetailScreen';
 import BookDetailScreen from './src/screens/BookDetailScreen';
-import ProfileScreen from './src/screens/ProfileScreen'; 
+import ProfileScreen from './src/screens/ProfileScreen';
+import CreateListingScreen from './src/screens/feed/CreateListingScreen';
+import ChooseSpotsScreen from './src/screens/feed/ChooseSpotsScreen';
 
 const RootStack = createNativeStackNavigator();
 
@@ -87,8 +89,20 @@ const App = () => {
                 key="genre-detail-screen"
               />
 
-              <RootStack.Screen 
-                name="BookDetail" 
+              <RootStack.Screen
+                name="CreateListing"
+                component={CreateListingScreen}
+                key="create-listing-screen"
+              />
+
+              <RootStack.Screen
+                name="ChooseSpots"
+                component={ChooseSpotsScreen}
+                key="choose-spots-screen"
+              />
+
+              <RootStack.Screen
+                name="BookDetail"
                 component={BookDetailScreen} 
                 options={{ 
                   headerShown: true, 

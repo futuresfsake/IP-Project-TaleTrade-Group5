@@ -8,7 +8,7 @@ import {
   Platform,
 } from 'react-native';
 // Added Star and Book to the imports
-import { Home, Search, User, Star, Book, MapPin } from 'lucide-react-native';
+import { Home, Search, User, Star, Book, MapPin, Rss } from 'lucide-react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 const { width } = Dimensions.get('window');
@@ -60,6 +60,8 @@ const TabBar = ({ state, descriptors, navigation }: BottomTabBarProps) => {
                 return <Home {...iconProps} />;
               case 'Search':
                 return <Search {...iconProps} />;
+              case 'Feed':
+                return <Rss {...iconProps} />;
               case 'My Books':
                 return <Book {...iconProps} />;
               case 'Wishlist':

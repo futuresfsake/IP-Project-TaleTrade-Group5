@@ -8,10 +8,11 @@ A book lending mobile app built with React Native and Firebase.
 TaleTrade/
 ├── App.tsx                  # Root component — handles auth state and navigation
 ├── index.js                 # App entry point
-├── .env                     # Environment variables (Google Books + MapTiler API keys)
+├── .env                     # Environment variables (Google Books + MapTiler keys, TaleTrade API URL)
 ├── env.d.ts                 # Type declarations for the `@env` variables
 ├── firebase.json            # Points the Firebase CLI at firestore.rules
 ├── firestore.rules          # Firestore security rules (deployed manually)
+├── server/                  # TaleTrade's own REST API (books, locations, Feed). See server/README.md
 ├── src/
 │   ├── api/
 │   ├── assets/
@@ -21,6 +22,7 @@ TaleTrade/
 │   │   └── logoWbg.png
 │   ├── component/
 │   │   ├── BookCard.tsx         # Reusable book card component
+│   │   ├── feed/                # Feed UI: ListingCard, MyListingCard, EditListingSheet, ConfirmDialog, ui.tsx
 │   │   ├── map/
 │   │   │   ├── SpotList.tsx     # List of meetup spots (distance, nearest-first sort)
 │   │   │   └── SpotSheet.tsx    # Bottom sheet with the books available at a spot
@@ -33,6 +35,10 @@ TaleTrade/
 │   │   ├── auth/
 │   │   │   ├── LoginScreen.tsx
 │   │   │   └── RegisterScreen.tsx
+│   │   ├── feed/
+│   │   │   ├── FeedScreen.tsx          # Feed tab: Community + My listings
+│   │   │   ├── CreateListingScreen.tsx # List a book
+│   │   │   └── ChooseSpotsScreen.tsx   # Pick meetup spots
 │   │   ├── map/
 │   │   │   └── MapScreen.tsx    # Map tab: meetup spots, spot sheet, center on me
 │   │   ├── BookDetailScreen.tsx
@@ -46,21 +52,26 @@ TaleTrade/
 │   │   ├── SettingScreen.tsx
 │   │   └── WishlistScreen.tsx
 │   ├── services/
+│   │   ├── apiClient.ts         # Authenticated client for TaleTrade's own API
 │   │   ├── authService.ts       # Firebase Auth (register/login)
 │   │   ├── bookService.ts       # Google Books API calls
+│   │   ├── feedService.ts       # Feed, listings, locations, book details (TaleTrade API)
+│   │   ├── feedHelpers.ts       # Pure Feed helpers (labels, validation, formatting)
 │   │   ├── genreService.ts      # User genre preferences (Firestore)
 │   │   ├── map/
 │   │   │   ├── locationService.ts # On-device location (permission, one-shot position, distance helpers)
 │   │   │   └── meetupService.ts   # Meetup spots, preferred spots, books-at-spot queries (Firestore)
 │   │   ├── userService.ts       # User profile data (Firestore)
 │   │   └── userbookService.ts   # User's book collection (Firestore)
+│   ├── theme/
+│   │   └── colors.ts            # Colour tokens for the Feed UI
 │   └── types/
 │       └── index.ts             # TypeScript type definitions
 ├── data/
 │   └── meetupSpots.json         # Curated meetup spots used by the seed script
 ├── scripts/
 │   └── seedMeetupSpots.js       # Upserts data/meetupSpots.json into Firestore (Admin SDK)
-├── __tests__/                   # Jest tests (App.test.tsx, meetup.test.ts)
+├── __tests__/                   # Jest tests (App, meetup, feed). Server tests: server/__tests__
 ├── __mocks__/
 │   └── env.js                   # Test stand-in for the `@env` module
 ├── android/                     # Android native project
@@ -96,7 +107,10 @@ TaleTrade/
    ```
    GOOGLE_BOOKS_API_KEY=your_google_books_api_key
    MAPTILER_API_KEY=your_maptiler_api_key
+   TALETRADE_API_URL=http://10.0.2.2:3000
    ```
+
+   `TALETRADE_API_URL` is the address of TaleTrade's own API (`server/`). `10.0.2.2` is how the Android emulator reaches your PC; use an `https://` URL for release builds. Without it the Feed tab shows an error state. Start the API first: see [`server/README.md`](server/README.md).
 
    `MAPTILER_API_KEY` is used for the Map tab tiles (create a key in your MapTiler account). Without it the Map tab shows an error screen.
 
@@ -162,6 +176,24 @@ After adding the MapLibre dependency, rebuild the app (`npx react-native run-and
 | `GET` | `/books/v1/volumes?q={query}&maxResults={n}&key={API_KEY}` | Search books by title, author, or ISBN | No (API key only) |
 
 Base URL: `https://www.googleapis.com/books/v1`
+
+### TaleTrade API — Feed, Locations, Book Details (`feedService.ts` → `server/`)
+
+TaleTrade's **own** REST API (full reference in [`server/README.md`](server/README.md)). The app sends the user's Firebase ID token as a bearer token via `apiClient.ts`.
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `GET` | `/v1/feed?filter&lat&lng&radiusKm&limit&cursor` | Community feed (`all`, `available`, `nearby`, `wishlist`), cursor-paginated | Yes |
+| `GET` | `/v1/me/listings` | The user's listings and counts | Yes |
+| `GET` | `/v1/me/books` | The user's library flagged with listing status | Yes |
+| `POST` | `/v1/listings` | List a book (must be in the user's library; 1–3 spots) | Yes |
+| `PATCH` | `/v1/listings/:id` | Edit availability, spots, times, condition, note (owner only) | Yes |
+| `DELETE` | `/v1/listings/:id` | Remove a listing (owner only, idempotent) | Yes |
+| `GET` | `/v1/spots?lat&lng&type` | Meetup locations with distance and listing counts | Yes |
+| `GET` | `/v1/spots/:id` | One location with the listings available there | Yes |
+| `GET` | `/v1/books/:id` | Book details enriched with community availability and locations | Yes |
+
+Firestore `listings/{ownerUid}_{bookId}` is written only by this API (Admin SDK). Add a `listings` block to `firestore.rules` that denies all client access (it is optional: unlisted paths are already denied). Removing a book from My Books also removes its listing.
 
 ### Firebase Auth (`authService.ts`)
 

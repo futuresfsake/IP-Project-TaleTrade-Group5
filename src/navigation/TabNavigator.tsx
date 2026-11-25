@@ -10,6 +10,7 @@ import SettingScreen from '../screens/SettingScreen';
 import WishlistScreen from '../screens/WishlistScreen';
 import MyBooksScreen from '../screens/MyBooksScreen';
 import MapScreen from '../screens/map/MapScreen';
+import FeedScreen from '../screens/feed/FeedScreen';
 import GenreDetailScreen from '../screens/GenreDetailScreen';
 import BookDetailScreen from '../screens/BookDetailScreen';
 
@@ -67,6 +68,7 @@ const TabNavigator = () => {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Search" component={SearchScreen} />
+      <Tab.Screen name="Feed" component={FeedScreen} />
       <Tab.Screen name="My Books" component={MyBooksScreen} />
       <Tab.Screen name="Wishlist" component={WishlistScreen} />
       <Tab.Screen name="Map" component={MapScreen} />

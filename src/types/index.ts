@@ -31,3 +31,101 @@ export interface SpotBook {
   thumbnail: string | null;
   ownerId: string;
 }
+
+// ---------------------------------------------------------------------------
+// TaleTrade API (server/): Feed, listings and enriched book / location details
+// ---------------------------------------------------------------------------
+
+export type ListingStatus = 'available' | 'reserved' | 'unavailable';
+export type ListingCondition = 'like_new' | 'good' | 'fair' | 'well_loved';
+export type ExchangeType = 'trade' | 'lend' | 'give_away';
+export type FeedFilter = 'all' | 'available' | 'nearby' | 'wishlist';
+
+/** A meetup location as served by the API (distance is present when coordinates were sent). */
+export interface ApiSpot {
+  id: string;
+  name: string;
+  type: MeetupSpotType;
+  city: string | null;
+  address: string | null;
+  lat: number;
+  lng: number;
+  openHours: string | null;
+  safetyNote: string | null;
+  distanceKm?: number;
+  listingCount?: number;
+}
+
+export interface FeedItem {
+  id: string;
+  status: ListingStatus;
+  condition: ListingCondition;
+  exchange: ExchangeType[];
+  availableTimes: string;
+  note: string;
+  createdAt: number;
+  updatedAt: number;
+  isMine: boolean;
+  wishlisted: boolean;
+  owner: { id: string; username: string; photoURL: string | null };
+  book: { id: string; title: string; author: string; authors: string[]; thumbnail: string | null };
+  spots: ApiSpot[];
+  nearestDistanceKm: number | null;
+}
+
+export interface FeedPage {
+  items: FeedItem[];
+  nextCursor: number | null;
+}
+
+export interface ListingSummary {
+  listed: number;
+  available: number;
+  reserved: number;
+}
+
+export interface MyListings {
+  items: FeedItem[];
+  summary: ListingSummary;
+}
+
+/** A book in the user's library, flagged with its listing when it is already on the Feed. */
+export interface LibraryBook {
+  bookId: string;
+  title: string;
+  author: string;
+  thumbnail: string | null;
+  listing: { id: string; status: ListingStatus } | null;
+}
+
+export interface ListingInput {
+  bookId: string;
+  condition: ListingCondition;
+  exchange: ExchangeType[];
+  spotIds: string[];
+  availableTimes?: string;
+  note?: string;
+  status?: ListingStatus;
+}
+
+export type ListingPatch = Partial<Omit<ListingInput, 'bookId'>>;
+
+export interface BookDetails {
+  book: {
+    id: string;
+    title: string;
+    authors: string[];
+    publisher: string | null;
+    description: string;
+    thumbnail: string | null;
+    isbn: string | null;
+    publishedDate: string | null;
+    pageCount: number | null;
+    categories: string[];
+    language: string | null;
+    source: 'google-books' | 'taletrade';
+  };
+  community: { ownerCount: number; listingCount: number; availableCount: number };
+  availableAt: ApiSpot[];
+  myListing: { id: string; status: ListingStatus } | null;
+}

@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-11-25 — Feed tab + TaleTrade API
+
+Readers can list books they own on a community **Feed**, edit availability and meetup locations, and browse what others near them are sharing. Book and location data for the Feed comes from TaleTrade's **own API** (`server/`), not directly from Google Books or MapTiler.
+
+### TaleTrade API (`server/`, new)
+
+- Express + Firebase Admin REST API under `/v1`: `/feed`, `/listings`, `/me/listings`, `/me/books`, `/spots`, `/spots/:id`, `/books/:id`. Firebase ID-token auth, per-user rate limiting, strict validation, consistent JSON errors. See `server/README.md`.
+- `GET /v1/books/:id` normalises Google Books (key stays server-side, cached, falls back to our own denormalised data) and adds community availability and pickup locations.
+- `GET /v1/spots` serves curated spots with server-side distance and listing counts.
+- Business rules are enforced server-side (book must be in the caller's library, 1–3 valid spots, one listing per book, owner-only edits).
+
+### App
+
+- **Feed tab** (new, after Search): Community (filters All / Available / Near me / Wishlist matches, pull to refresh, infinite scroll, save to wishlist, open book, owner profile, "Request meetup" opens the Map filtered to the book; your own posts appear too, with an Edit button) and My listings (counts, availability switch, tap a post to see it as readers do, Edit).
+- **List a book** screen (meetup spots are checkboxes you can uncheck), **Meetup spots** picker (list or pin on the map), **Edit listing** bottom sheet (availability, spots, times) and a remove-confirmation dialog, following the "TaleTrade UI v2 (Feed + refresh)" Figma page.
+- Primary buttons use the purple `#6C63A8`.
+
+### Data and rules
+
+- New `listings/{ownerUid}_{bookId}` collection, written only by the API (Admin SDK bypasses rules). `firestore.rules` is unchanged: unlisted paths are already denied to clients; an explicit deny block for `listings` is recommended. No new composite index is needed.
+- `removeBookFromInventory` also removes the book's listing; the API hides listings whose book left the library (also covers account deletion).
+
+### Config
+
+- New `.env` variable `TALETRADE_API_URL` (declared in `env.d.ts`, mocked in `__mocks__/env.js`).
+
+### Tests
+
+- `__tests__/feed.test.ts` (helpers, API client) and `server/__tests__/api.test.js` (auth, validation, listings, feed filters and pagination, orphan cleanup, locations, book details and fallback, rate limiting).
+
 ## 2026-11-24 — Meetup Points & Map tab
 
 Readers pick up to 3 public meetup places; a new **Map** tab shows those places and the books available at each. The map shows curated public places only — no user's location is stored or displayed. This replaces the earlier location-sharing design for BL-017/018/019 (see `BACKLOG.md`).
