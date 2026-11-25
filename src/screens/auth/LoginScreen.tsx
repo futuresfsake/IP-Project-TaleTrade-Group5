@@ -8,7 +8,6 @@ import {
   Alert,
   Image
 } from 'react-native';
-import Icon from 'react-native-vector-icons/FontAwesome';
 import { loginUser } from '../../services/authService';
 
 const LoginScreen = ({ navigation }: any) => {
@@ -28,7 +27,7 @@ const LoginScreen = ({ navigation }: any) => {
       // DELETED: navigation.replace('Home'); 
       // Keeping this line is what causes the "Not handled by navigator" error.
       
-    } catch (error: any) {
+    } catch {
       let errorMessage = 'Invalid email or password.';
       Alert.alert('Login Failed', errorMessage);
     }

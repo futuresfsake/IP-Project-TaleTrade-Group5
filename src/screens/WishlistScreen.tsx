@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { getFirestore, collection, doc, deleteDoc, onSnapshot } from '@react-native-firebase/firestore';
 import { getAuth } from '@react-native-firebase/auth';
-import { Heart, Trash2 } from 'lucide-react-native';
+import { Trash2 } from 'lucide-react-native';
 
 const reconstructBookData = (item: any) => ({
   id: item.bookId || item.id,

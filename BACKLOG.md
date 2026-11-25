@@ -12,7 +12,7 @@
 2. [Phase 1 — Critical Fixes & Stability](#phase-1--critical-fixes--stability)
 3. [Phase 2 — Auth Hardening & UX Polish](#phase-2--auth-hardening--ux-polish)
 4. [Phase 3 — Real-Time Chat & Push Notifications](#phase-3--real-time-chat--push-notifications)
-5. [Phase 4 — MapLibre Location & Book Discovery](#phase-4--maplibre-location--book-discovery)
+5. [Phase 4 — Meetup Points & Map](#phase-4--meetup-points--map)
 6. [Phase 5 — Trade System (Core Feature)](#phase-5--trade-system-core-feature)
 7. [Phase 6 — Social Features & Profile Enhancements](#phase-6--social-features--profile-enhancements)
 8. [Phase 7 — Code Quality & Tech Debt](#phase-7--code-quality--tech-debt)
@@ -27,7 +27,7 @@
 | **1** | Critical Fixes & Stability | URGENT | 1-2 days | None |
 | **2** | Auth Hardening & UX Polish | HIGH | 3-4 days | Phase 1 |
 | **3** | Real-Time Chat & Push Notifications | HIGH | 7-10 days | Phase 2 |
-| **4** | MapLibre Location & Book Discovery | HIGH | 5-7 days | Phase 2 |
+| **4** | Meetup Points & Map | HIGH | 5-7 days | Phase 2 |
 | **5** | Trade System (Core Feature) | HIGH | 7-10 days | Phase 3, Phase 4 |
 | **6** | Social Features & Profile Enhancements | MEDIUM | 4-5 days | Phase 3 |
 | **7** | Code Quality & Tech Debt | LOW | 2-3 days | Any time |
@@ -226,66 +226,77 @@
 
 ---
 
-## Phase 4 — MapLibre Location & Book Discovery
+## Phase 4 — Meetup Points & Map
 
-> **Goal:** Show real-time location of book owners/borrowers on an interactive map using MapLibre GL + MapTiler.
+> **Goal:** Let readers pick up to 3 public meetup places and see on a map where books are available — without TaleTrade ever storing or showing anyone's location. The map shows **curated public places** (malls, campus libraries, bookstores, cafés), not people.
+>
+> This replaces the earlier location-sharing design for BL-017/018/019. Removed from scope: storing user locations in Firestore (`Users/{uid}/location`), geohash / GeoFirestore queries, the location-sharing opt-in toggle, the 7-day location expiry, and `react-native-geolocation-service`.
 
-### BL-017 | MapLibre GL integration with MapTiler tiles
+### BL-017 | Meetup points and MapLibre map (MapTiler tiles)
 - **Severity:** HIGH (feature)
-- **Files:** New `src/screens/MapScreen.tsx`, new `src/services/locationService.ts`, modify `TabNavigator.tsx`
-- **Requirements:**
+- **Status:** DONE (code implemented; the manual steps in README → "Meetup points setup" must be done once per Firebase project)
+- **Files:** `src/screens/map/MapScreen.tsx`, `src/services/map/meetupService.ts`, `src/screens/SettingScreen.tsx`, `src/services/userbookService.ts`, `src/types/index.ts`, `firestore.rules`, `data/meetupSpots.json`, `scripts/seedMeetupSpots.js`
+- **What exists:**
 
-  **Setup:**
-  - Install `@maplibre/maplibre-react-native` (MapLibre GL JS for React Native)
-  - Obtain MapTiler API key → store in `.env` as `MAPTILER_API_KEY`
-  - Tile URL: `https://api.maptiler.com/maps/streets-v2/style.json?key={MAPTILER_API_KEY}`
+  **Data model**
+  - `meetupSpots/{spotId}` — curated, read-only from the app: `name`, `type` (`mall` | `library` | `bookstore` | `cafe` | `campus` | `other`), `lat`, `lng`, `address`, `city`, `openHours`, `safetyNote` (optional), `active`. Seeded with `scripts/seedMeetupSpots.js` (Admin SDK; refuses entries with null coordinates).
+  - `Users/{uid}.preferredSpots` — up to 3 spot ids.
+  - `bookOwners/{bookId}/owners/{uid}` is denormalized with `bookId`, `title`, `author`, `thumbnail`, `spotIds` (a copy of the owner's `preferredSpots`), alongside the existing `userId` and `addedAt`.
 
-  **Location Permissions:**
-  - Request `ACCESS_FINE_LOCATION` (Android) / `NSLocationWhenInUseUsageDescription` (iOS)
-  - Use `react-native-geolocation-service` for high-accuracy GPS
-  - Store user's location in Firestore: `Users/{uid}/location: { lat, lng, updatedAt }`
-  - Update location on app foreground (not continuous background tracking — battery concern)
-  - Users must opt-in to share location (toggle in Settings)
+  **Settings**
+  - "Where I can meet" card: multi-select of active spots, maximum 3, with a visible message when the limit is hit.
+  - `setPreferredSpots(uid, spotIds)` saves `preferredSpots` and rewrites `spotIds` plus the denormalized fields on every existing owner doc built from the user's `myBooks` (batches of 400), which also backfills older owner docs.
+  - `addBookToUserInventory` reads the user's `preferredSpots` and writes the extra owner-doc fields.
 
-  **Map Screen:**
-  - Full-screen MapLibre map with MapTiler street tiles
-  - Center on user's current location on load
-  - Pins/markers for nearby book owners (query `bookOwners` collection, join with `Users` for location)
-  - Marker clusters when zoomed out (MapLibre supports this natively)
-  - Tap a marker → bottom sheet with user info (avatar, username, book count, distance)
-  - "View Profile" button on bottom sheet → navigates to `UserProfileView`
-  - "Message" button on bottom sheet → opens chat (Phase 3 dependency)
+  **Map**
+  - `@maplibre/maplibre-react-native` (v11, new architecture) with MapTiler tiles: `https://api.maptiler.com/maps/streets-v2/style.json?key={MAPTILER_API_KEY}`; the key comes from `@env` (declared in `env.d.ts`).
+  - One marker per active spot with a badge showing how many books are available there; tapping a marker opens the spot sheet (BL-018).
+  - Loading, empty and error states (the error state has a retry button and also appears when `MAPTILER_API_KEY` is missing).
 
-  **Firestore Queries for Nearby Users:**
-  - Firestore doesn't support native geo queries — use **GeoFirestore** pattern:
-    - Store geohash in `Users/{uid}/geohash` alongside `lat/lng`
-    - Query by geohash prefix for bounding-box approximation
-    - Client-side filter for exact radius (e.g., 25km default, adjustable)
-  - Alternative: Use Firebase Extensions → "Geospatial Querying" or a backend with PostGIS
+  **Firestore rules** (`firestore.rules`, deployed manually)
+  - `meetupSpots`: read for signed-in users, no client writes.
+  - Owner docs: update allowed for the owner (with `userId` unchanged); `spotIds`, when present, must be a list of at most 3.
+  - Read-only collection-group rule for `owners`.
+  - `Users/{uid}/myBooks/{id}` is readable by signed-in users, so other users' profiles can show their book count.
 
-  **Privacy & Security:**
-  - Location sharing is opt-in (default OFF)
-  - Store only city-level precision (truncate to ~3 decimal places, ~100m accuracy) — never exact address
-  - Users can toggle location visibility in Settings
-  - Location data auto-expires if not refreshed in 7 days
+- **Known limits:** book counts and per-spot book lists are computed in the app from owner docs (one read per owner/book pair at a spot); there is no marker clustering.
 
-### BL-018 | "Nearby Books" discovery feature
+### BL-018 | Spot sheet, wishlist highlights and "center on me"
 - **Severity:** MEDIUM
-- **Files:** `MapScreen.tsx`, new `src/services/discoveryService.ts`
-- **Requirements:**
-  - Filter map markers by specific book or genre (search bar on map)
-  - "Books near me" list view alongside the map (toggle between map/list)
-  - Show distance from current user to each book owner
-  - Integration with wishlist: highlight markers for books on user's wishlist
-  - Push notification when a wishlisted book becomes available nearby (connects to BL-014)
+- **Status:** PARTIAL (core flow done; items under "Not implemented" remain)
+- **Files:** `src/component/map/SpotSheet.tsx`, `src/component/map/SpotList.tsx`, `src/screens/map/MapScreen.tsx`, `src/screens/BookDetailScreen.tsx`, `src/services/map/meetupService.ts`, `src/services/map/locationService.ts`
+- **Implemented:**
+
+  **Spot sheet**
+  - "Books" first, then a collapsible "Spot info" (address, opening hours, safety note).
+  - One row per book (results grouped by `bookId`): thumbnail, title, author, owner count. Expanding a row lists its owners; tapping an owner opens `UserProfileView`, tapping the row opens `BookDetail`.
+  - Books on the viewer's wishlist sort to the top with a "★ On your wishlist" badge (the viewer's own copies don't count).
+  - 20 books shown first with "Show more"; pagination is client-side because owner counts and wishlist ordering need all of a spot's rows.
+  - Search box (title/author) only when the spot has more than 10 distinct books.
+  - Loading, error with retry, and the empty state "No books here yet. Add this spot in Settings to list yours."
+
+  **Integration**
+  - BookDetail shows each owner's meetup spot names and a "View on map" button that opens the Map tab filtered to the spots that have the book.
+  - Spots with a book from the viewer's wishlist get a gold star marker and a legend on the map.
+
+  **Center on me (on-device only)**
+  - Foreground permission is requested once when the Map tab first opens; the map centers on the user with a blue dot, and a "locate me" button re-centers.
+  - Distances ("850 m", "1.2 km") appear in the spot sheet and in a spot list with a "Nearest first" toggle.
+  - The position is read once (last known device position) and kept in component state only: never written to Firestore, AsyncStorage or logs. No background location.
+  - If permission is denied or no position is available, the map keeps its default view and hides distances; if the user chose "never ask again", an alert offers `Linking.openSettings()`.
+
+- **Not implemented:**
+  - Filtering the map by arbitrary book/genre from a search bar (only the BookDetail "View on map" filter exists).
+  - A "books near me" list of individual books (the spot list shows spots, not books).
+  - Push notification when a wishlisted book becomes available at a spot (depends on BL-014).
 
 ### BL-019 | Add Map tab to navigation
 - **Severity:** MEDIUM
-- **File:** `src/navigation/TabNavigator.tsx`, `src/component/TabBar.tsx`
-- **Requirements:**
-  - Add "Map" or "Nearby" as a 6th tab (between Wishlist and Profile)
-  - Use `MapPin` icon from `lucide-react-native`
-  - Update TabBar layout to accommodate 6 tabs
+- **Status:** DONE
+- **Files:** `src/navigation/TabNavigator.tsx`, `src/component/TabBar.tsx`
+- **What exists:**
+  - "Map" is the 6th tab, between Wishlist and Profile, with the `MapPin` icon from `lucide-react-native`.
+  - Tab horizontal padding in `TabBar` was reduced from 12 to 8 so five icons plus one labelled tab fit; checked on the Pixel 7 (API 35) emulator.
 
 ---
 
@@ -475,9 +486,9 @@
 | BL-014 | FCM Push Notifications | 3 | HIGH | TODO |
 | BL-015 | Real-Time Encrypted Chat | 3 | HIGH | TODO |
 | BL-016 | Chat entry points | 3 | MEDIUM | TODO |
-| BL-017 | MapLibre + MapTiler integration | 4 | HIGH | TODO |
-| BL-018 | Nearby Books discovery | 4 | MEDIUM | TODO |
-| BL-019 | Map tab in navigation | 4 | MEDIUM | TODO |
+| BL-017 | Meetup points + MapLibre map (MapTiler) | 4 | HIGH | DONE |
+| BL-018 | Spot sheet, wishlist highlights, center on me | 4 | MEDIUM | PARTIAL |
+| BL-019 | Map tab in navigation | 4 | MEDIUM | DONE |
 | BL-020 | Trade request & response flow | 5 | HIGH | TODO |
 | BL-021 | Book availability status | 5 | MEDIUM | TODO |
 | BL-022 | Trade history | 5 | LOW | TODO |

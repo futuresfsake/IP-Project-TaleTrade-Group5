@@ -3,11 +3,12 @@ import {
   View, Text, StyleSheet, SafeAreaView, TouchableOpacity, 
   ScrollView, Platform, StatusBar, Image, Linking, Alert 
 } from 'react-native';
-import { Settings, BookOpen, ChevronRight, Send, Mail } from 'lucide-react-native';
+import { Settings, ChevronRight, Send, Mail } from 'lucide-react-native';
 import { getAuth } from '@react-native-firebase/auth';
 import { useIsFocused } from '@react-navigation/native';
 import { getUserProfile } from '../services/userService';
 import { getUserInventory } from '../services/userbookService';
+import { getSpot } from '../services/map/meetupService';
 
 const COLORS = { 
   primaryBlue: '#4A68BE', 
@@ -24,6 +25,7 @@ const ProfileScreen = ({ navigation, route }: any) => {
   const [initials, setInitials] = useState('??');
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [socialLink, setSocialLink] = useState<string | null>(null);
+  const [spotNames, setSpotNames] = useState<string[]>([]);
 
   const visitedUserId = route?.params?.userId;
   const hideHeader = route?.params?.hideHeader; 
@@ -39,6 +41,7 @@ const ProfileScreen = ({ navigation, route }: any) => {
     setProfileImage(null);
     setInitials('??');
     setBookCount(0);
+    setSpotNames([]);
   }, [visitedUserId]);
 
   const fetchAndSetUserData = useCallback(async () => {
@@ -57,6 +60,10 @@ const ProfileScreen = ({ navigation, route }: any) => {
           ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase() 
           : nameParts[0][0].toUpperCase()
         );
+
+        const spotIds: string[] = Array.isArray(userData.preferredSpots) ? userData.preferredSpots : [];
+        const spots = await Promise.all(spotIds.map(id => getSpot(id)));
+        setSpotNames(spots.filter(s => s && s.active).map(s => s!.name));
       }
 
       const inventory = await getUserInventory(targetUid);
@@ -149,6 +156,19 @@ const ProfileScreen = ({ navigation, route }: any) => {
             </View>
           </View>
 
+          <View style={[styles.menuContainer, styles.spotsContainer]}>
+            <Text style={styles.menuTitle}>Where I can meet</Text>
+            {spotNames.length > 0 ? (
+              spotNames.map(name => (
+                <Text key={name} style={styles.menuItemLabel}>📍 {name}</Text>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>
+                {isOwnProfile ? 'Pick meetup spots in Settings.' : 'No meetup spots chosen.'}
+              </Text>
+            )}
+          </View>
+
           <View style={styles.menuContainer}>
             <Text style={styles.menuTitle}>Socials</Text>
             
@@ -233,6 +253,7 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 26, fontWeight: '900', color: COLORS.softPurple },
   statLabel: { fontSize: 12, fontWeight: '600', color: COLORS.primaryBlue, marginTop: 3 },
   menuContainer: { backgroundColor: COLORS.white, borderRadius: 30, paddingHorizontal: 20, paddingVertical: 10 },
+  spotsContainer: { marginBottom: 20, paddingBottom: 15 },
   menuTitle: { fontSize: 18, fontWeight: '800', color: COLORS.primaryBlue, marginBottom: 8, marginTop: 15 },
   menuItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16 },
   menuItemLeft: { flexDirection: 'row', alignItems: 'center' },

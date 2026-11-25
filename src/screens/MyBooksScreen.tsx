@@ -4,7 +4,7 @@ import {
   SafeAreaView, ActivityIndicator, RefreshControl, Image, Alert
 } from 'react-native';
 import { getUserInventory, removeBookFromInventory } from '../services/userbookService';
-import { ArrowLeft, Trash2 } from 'lucide-react-native';
+import { Trash2 } from 'lucide-react-native';
 
 const reconstructBookData = (item: any) => ({
   id: item.bookId || item.id,
@@ -49,7 +49,7 @@ export default function MyBooksScreen({ navigation }: any) {
           try {
             setBooks(prev => prev.filter(book => book.id !== id));
             await removeBookFromInventory(id);
-          } catch (error) {
+          } catch {
             fetchBooks();
           }
         }

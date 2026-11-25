@@ -11,6 +11,11 @@ service cloud.firestore {
       allow read, write: if isUser(userId);
     }
 
+    // Owned books are public (bookOwners is already readable); writes stay owner-only above.
+    match /Users/{userId}/myBooks/{bookId} {
+      allow read: if isSignedIn();
+    }
+
     match /bookOwners/{bookId} {
       allow read: if isSignedIn();
       allow write: if false;
@@ -19,9 +24,32 @@ service cloud.firestore {
     match /bookOwners/{bookId}/owners/{ownerId} {
       allow read: if isSignedIn();
       allow create: if isUser(ownerId)
-        && request.resource.data.userId == request.auth.uid;
+        && request.resource.data.userId == request.auth.uid
+        && validSpotIds();
       allow delete: if isUser(ownerId);
-      allow update: if false;
+      // Updates are needed to sync spotIds when the owner changes meetup spots.
+      allow update: if isUser(ownerId)
+        && request.resource.data.userId == request.auth.uid
+        && validSpotIds();
+    }
+
+    // Collection-group reads on `owners` (e.g. books available at a meetup spot).
+    // Read-only: write rules stay on the nested match above.
+    match /{path=**}/owners/{ownerId} {
+      allow read: if isSignedIn();
+    }
+
+    // Curated public meetup places; seeded with the Admin SDK, read-only for the app.
+    match /meetupSpots/{spotId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // spotIds is optional (legacy docs) but, when present, must be a list of <= 3.
+    function validSpotIds() {
+      return !('spotIds' in request.resource.data)
+        || (request.resource.data.spotIds is list
+            && request.resource.data.spotIds.size() <= 3);
     }
 
     function isSignedIn() {

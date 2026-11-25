@@ -8,7 +8,7 @@ import {
   Platform,
 } from 'react-native';
 // Added Star and Book to the imports
-import { Home, Search, User, Star, Book } from 'lucide-react-native';
+import { Home, Search, User, Star, Book, MapPin } from 'lucide-react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 const { width } = Dimensions.get('window');
@@ -64,6 +64,8 @@ const TabBar = ({ state, descriptors, navigation }: BottomTabBarProps) => {
                 return <Book {...iconProps} />;
               case 'Wishlist':
                 return <Star {...iconProps} />;
+              case 'Map':
+                return <MapPin {...iconProps} />;
               case 'Profile':
                 return <User {...iconProps} />;
               default:
@@ -128,7 +130,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: 45,
-    paddingHorizontal: 12, // Slightly reduced padding for horizontal fit
+    paddingHorizontal: 8, // Reduced so 6 tabs (5 icons + 1 labelled) fit on ~360dp screens
     borderRadius: 25,
   },
   activeTabItem: {

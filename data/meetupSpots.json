@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Ayala Center Cebu",
+    "type": "mall",
+    "lat": 10.318350491262418,
+    "lng": 123.90524126399858,
+    "address": "Ayala Center Cebu, Cardinal Rosales Ave, Cebu City, 6000 Cebu",
+    "city": "Cebu City",
+    "openHours": "11:00 AM",
+    "safetyNote": "",
+    "active": true,
+    "verified": true
+  },
+  {
+    "name": "SM City Cebu",
+    "type": "mall",
+    "lat": 10.311587978701672,
+    "lng": 123.91781639540129,
+    "address": "Cebu Port Center, North Reclamation Area, Juan Luna Ave. cor. Cabahug and Kaoshiung Streets, Mabolo, Cebu City, 6000 Cebu",
+    "city": "Cebu City",
+    "openHours": "10:00 AM",
+    "safetyNote": "",
+    "active": true,
+    "verified": true
+  },
+  {
+    "name": "University of San Carlos – Talamban Campus Library",
+    "type": "library",
+    "lat": 10.35449435229035,
+    "lng": 123.90944108878712,
+    "address": "9W35+PQV, University of San Carlos, Cebu City, 6000 Cebu",
+    "city": "Cebu City",
+    "openHours": "7:30 AM",
+    "safetyNote": "",
+    "active": true,
+    "verified": true
+  }
+]

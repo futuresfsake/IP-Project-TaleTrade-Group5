@@ -14,11 +14,13 @@ import {
   addBookToUserInventory, 
   addToWishlist 
 } from '../services/userbookService';
+import { getActiveSpots } from '../services/map/meetupService';
 
 const BookDetailScreen = ({ route, navigation }: any) => {
-  const bookData = route?.params?.bookData; 
+  const bookData = route?.params?.bookData;
 
   const [owners, setOwners] = useState<any[]>([]);
+  const [spotNames, setSpotNames] = useState<Record<string, string>>({});
   const [loadingAction, setLoadingAction] = useState(false);
 
   const bookId = bookData?.id;
@@ -43,7 +45,27 @@ const BookDetailScreen = ({ route, navigation }: any) => {
 
   useEffect(() => {
     fetchOwners();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId]);
+
+  useEffect(() => {
+    // Spot names are a nice-to-have; owners still show if this fails.
+    getActiveSpots()
+      .then(spots => setSpotNames(Object.fromEntries(spots.map(s => [s.id, s.name]))))
+      .catch(() => {});
+  }, []);
+
+  const spotsFor = (item: any): string[] =>
+    (item.spotIds || []).map((id: string) => spotNames[id]).filter(Boolean);
+
+  const hasMeetupSpots = owners.some(o => spotsFor(o).length > 0);
+
+  const handleViewOnMap = () => {
+    navigation.navigate('AppTabs', {
+      screen: 'Map',
+      params: { bookId, bookTitle: title },
+    });
+  };
 
   const getInitials = (name: string) => {
     const parts = name.trim().split(' ');
@@ -59,7 +81,7 @@ const BookDetailScreen = ({ route, navigation }: any) => {
       await addBookToUserInventory(bookData);
       Alert.alert("Success", "Book added to your inventory!");
       await fetchOwners(); 
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Could not add book. Please try again.");
     } finally {
       setLoadingAction(false);
@@ -71,7 +93,7 @@ const BookDetailScreen = ({ route, navigation }: any) => {
     try {
       await addToWishlist(bookData);
       Alert.alert("Wishlist", "Added to your hearts!");
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Could not add to wishlist.");
     }
   };
@@ -169,12 +191,23 @@ const BookDetailScreen = ({ route, navigation }: any) => {
                 ]}>
                   {item.username}
                 </Text>
+                {spotsFor(item).length > 0 && (
+                  <Text style={styles.ownerSpots} numberOfLines={3}>
+                    📍 {spotsFor(item).join(', ')}
+                  </Text>
+                )}
               </TouchableOpacity>
             ))
           ) : (
             <Text style={styles.noOwners}>Be the first to own this!</Text>
           )}
         </ScrollView>
+
+        {hasMeetupSpots && (
+          <TouchableOpacity style={styles.mapButton} onPress={handleViewOnMap}>
+            <Text style={styles.btnText}>📍 View on map</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </ScrollView>
   );
@@ -196,7 +229,9 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 10, color: '#4A68BE' },
   description: { color: '#555', lineHeight: 22, fontSize: 14, textAlign: 'justify' },
   socialSection: { padding: 20, marginHorizontal: 15, backgroundColor: '#FFF', borderRadius: 20, marginBottom: 40, elevation: 2 },
-  ownerCard: { alignItems: 'center', marginRight: 20 },
+  ownerCard: { alignItems: 'center', marginRight: 20, maxWidth: 100 },
+  ownerSpots: { fontSize: 10, color: '#7E6FB0', marginTop: 2, textAlign: 'center' },
+  mapButton: { backgroundColor: '#4A68BE', padding: 14, borderRadius: 20, alignItems: 'center', marginTop: 10, elevation: 3 },
   profileCircleContainer: { borderRadius: 35, padding: 2 },
   profileCircle: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: '#7E6FB0', backgroundColor: '#FFF' },
   initialsContainer: { justifyContent: 'center', alignItems: 'center' },

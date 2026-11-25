@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, TextInput, FlatList, Text, Image, StyleSheet, ActivityIndicator, TouchableOpacity, Platform, StatusBar } from 'react-native';
+import { View, TextInput, FlatList, Text, Image, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { searchBooks } from '../services/bookService'; 
 
 const SearchScreen = ({ navigation }: any) => {
