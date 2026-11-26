@@ -5,11 +5,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import TabBar from '../component/TabBar'; 
 import HomeScreen from '../screens/HomeScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import SearchScreen from '../screens/SearchScreen';
 import SettingScreen from '../screens/SettingScreen';
-import WishlistScreen from '../screens/WishlistScreen';
-import MyBooksScreen from '../screens/MyBooksScreen';
-import MapScreen from '../screens/map/MapScreen';
+import LibraryScreen from '../screens/LibraryScreen';
+import MessagesScreen from '../screens/MessagesScreen';
 import FeedScreen from '../screens/feed/FeedScreen';
 import GenreDetailScreen from '../screens/GenreDetailScreen';
 import BookDetailScreen from '../screens/BookDetailScreen';
@@ -36,7 +34,7 @@ export const MainNavigator = () => {
         options={{ 
           headerShown: true, 
           title: 'Reader Profile', 
-          headerTintColor: '#6C63FF',
+          headerTintColor: '#6C63A8',
           headerStyle: { backgroundColor: '#F5E9CF' } 
         }} 
       />
@@ -67,11 +65,9 @@ const TabNavigator = () => {
       screenOptions={{ headerShown: false, tabBarHideOnKeyboard: true }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Search" component={SearchScreen} />
       <Tab.Screen name="Feed" component={FeedScreen} />
-      <Tab.Screen name="My Books" component={MyBooksScreen} />
-      <Tab.Screen name="Wishlist" component={WishlistScreen} />
-      <Tab.Screen name="Map" component={MapScreen} />
+      <Tab.Screen name="Messages" component={MessagesScreen} />
+      <Tab.Screen name="Library" component={LibraryScreen} />
       <Tab.Screen name="Profile" component={ProfileStackScreen} />
     </Tab.Navigator>
   );

@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  
   FlatList,
   RefreshControl,
   ScrollView,
@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { dialog } from '../../component/ui/AppDialog';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Rss } from 'lucide-react-native';
@@ -27,14 +28,14 @@ import { ApiError } from '../../services/apiClient';
 import { emptyFeedCopy, toBookData } from '../../services/feedHelpers';
 import { getUserLocation } from '../../services/map/locationService';
 import type { Coords } from '../../services/map/locationService';
-import { addToWishlist } from '../../services/userbookService';
+import { addToWishlist, removeFromWishlist } from '../../services/userbookService';
 import type { ApiSpot, FeedFilter, FeedItem, ListingPatch, ListingStatus, MyListings } from '../../types';
 import ListingCard from '../../component/feed/ListingCard';
 import MyListingCard from '../../component/feed/MyListingCard';
 import EditListingSheet from '../../component/feed/EditListingSheet';
 import ConfirmDialog from '../../component/feed/ConfirmDialog';
 import ListingPreviewModal from '../../component/feed/ListingPreviewModal';
-import { AppButton, Avatar, Chip, EmptyState, SegmentedControl } from '../../component/feed/ui';
+import { AppButton, Chip, EmptyState, SegmentedControl } from '../../component/feed/ui';
 
 type FeedTab = 'community' | 'mine';
 
@@ -48,7 +49,7 @@ const FILTERS: Array<{ value: FeedFilter; label: string }> = [
 const messageOf = (error: unknown) =>
   error instanceof ApiError ? error.message : 'Something went wrong. Please try again.';
 
-const FeedScreen = ({ navigation }: any) => {
+const FeedScreen = ({ navigation, route }: any) => {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
 
@@ -72,6 +73,14 @@ const FeedScreen = ({ navigation }: any) => {
   const [removing, setRemoving] = useState<FeedItem | null>(null);
   const [viewing, setViewing] = useState<FeedItem | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Short confirmation after bookmarking, with a shortcut to where it went.
+  const [toast, setToast] = useState<{ text: string; view: boolean } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // ------------------------------------------------------------------ data loading
   const loadCommunity = useCallback(
@@ -112,6 +121,7 @@ const FeedScreen = ({ navigation }: any) => {
   );
 
   const loadMine = useCallback(async (mode: 'initial' | 'refresh') => {
+    requestRef.current += 1; // drop any community request still in flight
     mode === 'refresh' ? setRefreshing(true) : setLoading(true);
     try {
       setMine(await getMyListings());
@@ -139,7 +149,7 @@ const FeedScreen = ({ navigation }: any) => {
     if (next === 'nearby' && !coords) {
       const result = await getUserLocation();
       if (result.status !== 'ok') {
-        Alert.alert('Location needed', 'Turn on location access to see books near you.');
+        dialog.alert('Location needed', 'Turn on location access to see books near you.');
         return;
       }
       setCoords(result.coords);
@@ -149,20 +159,38 @@ const FeedScreen = ({ navigation }: any) => {
 
   // ---------------------------------------------------------------- card actions
   const openBook = (item: FeedItem) => navigation.navigate('BookDetail', { bookData: toBookData(item.book) });
-  const openOwner = (item: FeedItem) => navigation.navigate('UserProfileView', { userId: item.owner.id });
+  const openOwner = (item: FeedItem) => navigation.navigate('UserProfileView', { userId: item.owner.id, hideHeader: true });
   const showOnMap = (item: FeedItem) =>
-    navigation.navigate('Map', { bookId: item.book.id, bookTitle: item.book.title });
+    navigation.navigate('Map', {
+      bookId: item.book.id,
+      bookTitle: item.book.title,
+      spotIds: item.spots.filter(s => !s.custom).map(s => s.id),
+      pins: item.spots.filter(s => s.custom).map(({ name, lat, lng }) => ({ name, lat, lng })),
+    });
 
-  const saveToWishlist = async (item: FeedItem) => {
-    if (item.wishlisted) {
-      Alert.alert('Wishlist', 'This book is already on your wishlist.');
+  /** The bookmark toggles the book on your wishlist (Library → Wishlist). */
+  const saveToWishlist = (item: FeedItem) => {
+    if (!item.wishlisted) {
+      setWishlisted(item, true);
       return;
     }
+    dialog.alert('Remove from wishlist?', item.book.title, [
+      { text: 'Keep', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => setWishlisted(item, false) },
+    ]);
+  };
+
+  const setWishlisted = async (item: FeedItem, saved: boolean) => {
+    const mark = (value: boolean) =>
+      setItems(prev => prev.map(i => (i.book.id === item.book.id && !i.isMine ? { ...i, wishlisted: value } : i)));
+    mark(saved);
     try {
-      await addToWishlist(toBookData(item.book));
-      setItems(prev => prev.map(i => (i.book.id === item.book.id ? { ...i, wishlisted: true } : i)));
+      if (saved) await addToWishlist(toBookData(item.book));
+      else await removeFromWishlist(item.book.id);
+      setToast(saved ? { text: 'Saved to your wishlist', view: true } : { text: 'Removed from your wishlist', view: false });
     } catch {
-      Alert.alert('Error', 'Could not add to your wishlist.');
+      mark(!saved);
+      dialog.alert('Error', 'Could not update your wishlist.');
     }
   };
 
@@ -181,12 +209,23 @@ const FeedScreen = ({ navigation }: any) => {
     );
   };
 
-  const toggleAvailability = async (item: FeedItem, next: ListingStatus) => {
+  const toggleAvailability = (item: FeedItem, next: ListingStatus) => {
+    if (next !== 'unavailable') {
+      changeAvailability(item, next);
+      return;
+    }
+    dialog.alert('Hide this listing?', 'Readers won’t see it in the Feed until you turn it back on.', [
+      { text: 'Keep visible', style: 'cancel' },
+      { text: 'Hide', style: 'destructive', onPress: () => changeAvailability(item, next) },
+    ]);
+  };
+
+  const changeAvailability = async (item: FeedItem, next: ListingStatus) => {
     setBusyId(item.id);
     try {
       applyListing(await updateListing(item.id, { status: next }));
     } catch (e) {
-      Alert.alert('Could not update', messageOf(e));
+      dialog.alert('Could not update', messageOf(e));
     } finally {
       setBusyId(null);
     }
@@ -209,7 +248,7 @@ const FeedScreen = ({ navigation }: any) => {
       applyListing(await updateListing(item.id, patch));
       setEditing(null);
     } catch (e) {
-      Alert.alert('Could not save', messageOf(e));
+      dialog.alert('Could not save', messageOf(e));
     } finally {
       setSaving(false);
     }
@@ -230,13 +269,30 @@ const FeedScreen = ({ navigation }: any) => {
       setRemoving(null);
       setEditing(null);
     } catch (e) {
-      Alert.alert('Could not remove', messageOf(e));
+      dialog.alert('Could not remove', messageOf(e));
     } finally {
       setSaving(false);
     }
   };
 
   const startListing = () => navigation.navigate('CreateListing');
+
+  // "Edit listing" in the Library lands here: show My listings, then open that listing's editor.
+  const editListingId: string | undefined = route?.params?.editListingId;
+  useEffect(() => {
+    if (editListingId) setTab('mine');
+  }, [editListingId]);
+  useEffect(() => {
+    if (!editListingId || tab !== 'mine' || loading || !mine) return;
+    const target = mine.items.find(i => i.id === editListingId);
+    navigation.setParams({ editListingId: undefined });
+    if (target) openEditor(target);
+    // openEditor is recreated on every render; the id guard above makes this run once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editListingId, tab, loading, mine]);
+
+  // An empty list already offers "List a book", so the header button would repeat it.
+  const showAdd = loading || (tab === 'community' ? items.length > 0 : (mine?.items.length ?? 0) > 0);
 
   // ---------------------------------------------------------------------- render
   const header = (
@@ -248,9 +304,11 @@ const FeedScreen = ({ navigation }: any) => {
             {tab === 'community' ? 'What readers near you are sharing' : 'Manage the books you’re sharing'}
           </Text>
         </View>
-        <TouchableOpacity accessibilityLabel="List a book" style={styles.add} onPress={startListing} activeOpacity={0.85}>
-          <Plus color={colors.white} size={22} />
-        </TouchableOpacity>
+        {showAdd ? (
+          <TouchableOpacity accessibilityLabel="List a book" style={styles.add} onPress={startListing} activeOpacity={0.85}>
+            <Plus color={colors.white} size={22} />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <View style={styles.pad}>
@@ -271,12 +329,6 @@ const FeedScreen = ({ navigation }: any) => {
               <Chip key={f.value} label={f.label} selected={filter === f.value} onPress={() => selectFilter(f.value)} />
             ))}
           </ScrollView>
-          <TouchableOpacity style={styles.composer} onPress={startListing} activeOpacity={0.85}>
-            <Avatar name="Me" size={40} />
-            <View style={styles.prompt}>
-              <Text style={styles.promptText}>Have a book to share? List it…</Text>
-            </View>
-          </TouchableOpacity>
         </>
       ) : mine ? (
         <View style={styles.stats}>
@@ -319,7 +371,7 @@ const FeedScreen = ({ navigation }: any) => {
     return (
       <EmptyState icon={<Rss color={colors.purple} size={48} strokeWidth={1.8} />} title={copy.title} body={copy.body}>
         <AppButton label="List a book" onPress={startListing} />
-        <AppButton variant="ghost" label="Edit my meetup spots" onPress={() => navigation.navigate('Profile', { screen: 'Settings' })} />
+        <AppButton variant="ghost" label="Edit my meetup spots" onPress={() => navigation.navigate('Profile', { screen: 'Settings', initial: false })} />
       </EmptyState>
     );
   };
@@ -352,6 +404,22 @@ const FeedScreen = ({ navigation }: any) => {
           )
         }
       />
+
+      {toast ? (
+        <View style={styles.toast} accessibilityLiveRegion="polite">
+          <Text style={styles.toastText}>{toast.text}</Text>
+          {toast.view ? (
+            <TouchableOpacity
+              onPress={() => {
+                setToast(null);
+                navigation.navigate('Library', { tab: 'wishlist' });
+              }}
+            >
+              <Text style={styles.toastAction}>View</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
 
       <ListingPreviewModal
         item={viewing}
@@ -402,7 +470,7 @@ const styles = StyleSheet.create({
   pad: { paddingHorizontal: 20 },
   separator: { height: 14 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12 },
-  title: { fontSize: 28, fontWeight: '900', color: colors.blue },
+  title: { fontSize: 28, fontWeight: '900', color: colors.accent },
   subtitle: { fontSize: 14, color: colors.muted },
   add: {
     width: 44,
@@ -417,23 +485,26 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
-  chips: { paddingHorizontal: 20, paddingVertical: 12, gap: 8 },
-  composer: {
+  chips: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 14, gap: 8 },
+  toast: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 104,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginHorizontal: 20,
-    marginBottom: 14,
-    padding: 12,
-    borderRadius: 20,
-    backgroundColor: colors.white,
-    ...shadow,
+    justifyContent: 'space-between',
+    backgroundColor: colors.ink,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    height: 48,
+    elevation: 8,
   },
-  prompt: { flex: 1, height: 40, borderRadius: 14, backgroundColor: colors.field, justifyContent: 'center', paddingHorizontal: 14 },
-  promptText: { fontSize: 14, color: colors.muted },
+  toastText: { color: colors.white, fontSize: 14, fontWeight: '600' },
+  toastAction: { color: '#C9C3F5', fontSize: 14, fontWeight: '800', paddingHorizontal: 4 },
   stats: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 14 },
   stat: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 16, backgroundColor: colors.white, ...shadow },
-  statNumber: { fontSize: 22, fontWeight: '900', color: colors.blue },
+  statNumber: { fontSize: 22, fontWeight: '900', color: colors.accent },
   statLabel: { fontSize: 12, fontWeight: '600', color: colors.muted },
   loader: { marginTop: 40 },
 });

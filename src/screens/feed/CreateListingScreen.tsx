@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,7 +13,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { dialog } from '../../component/ui/AppDialog';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePreventRemove } from '@react-navigation/native';
 import { Check, ChevronLeft, MapPin } from 'lucide-react-native';
 import { getAuth } from '@react-native-firebase/auth';
 import { colors } from '../../theme/colors';
@@ -45,6 +47,7 @@ const CreateListingScreen = ({ navigation, route }: any) => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  const [posted, setPosted] = useState(false);
   // Spots shown as checkboxes: the user's preferred spots plus any picked on the list/map screen.
   const [offered, setOffered] = useState<string[]>([]);
   const [limitHit, setLimitHit] = useState(false);
@@ -54,6 +57,7 @@ const CreateListingScreen = ({ navigation, route }: any) => {
     condition: 'good',
     exchange: ['trade'],
     spotIds: [],
+    pins: [],
     availableTimes: '',
     note: '',
   });
@@ -91,13 +95,30 @@ const CreateListingScreen = ({ navigation, route }: any) => {
   useEffect(() => {
     const picked: string[] | undefined = route?.params?.spotIds;
     if (picked) {
-      patch({ spotIds: picked });
+      patch({ spotIds: picked, pins: route?.params?.pins ?? [] });
       setOffered(prev => Array.from(new Set([...prev, ...picked])));
       setLimitHit(false);
     }
-  }, [route?.params?.spotIds]);
+  }, [route?.params?.spotIds, route?.params?.pins]);
 
   const problem = validateListingForm(form);
+
+  // Leaving a half-filled form asks first.
+  const dirty =
+    !posted &&
+    (form.bookId !== (route?.params?.bookId ?? null) ||
+      !!form.note.trim() ||
+      !!form.availableTimes.trim() ||
+      (form.pins?.length ?? 0) > 0);
+  usePreventRemove(dirty, ({ data }) => {
+    dialog.alert('Discard this listing?', 'What you filled in will be lost.', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: () => navigation.dispatch(data.action) },
+    ]);
+  });
+  useEffect(() => {
+    if (posted) navigation.goBack();
+  }, [posted, navigation]);
   const listable = library.filter(b => !b.listing);
 
   const submit = async () => {
@@ -106,10 +127,10 @@ const CreateListingScreen = ({ navigation, route }: any) => {
     setPosting(true);
     try {
       await createListing(formToInput(form));
-      navigation.goBack();
+      setPosted(true);
     } catch (e) {
       const message = e instanceof ApiError ? e.message : 'Could not post your listing.';
-      Alert.alert('Could not post', message);
+      dialog.alert('Could not post', message);
       if (e instanceof ApiError && e.code === 'listing_exists') load();
     } finally {
       setPosting(false);
@@ -122,7 +143,7 @@ const CreateListingScreen = ({ navigation, route }: any) => {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + 4 }]}>
         <TouchableOpacity accessibilityLabel="Back" style={styles.back} onPress={() => navigation.goBack()}>
-          <ChevronLeft color={colors.blue} size={22} />
+          <ChevronLeft color={colors.accent} size={22} />
         </TouchableOpacity>
         <View style={styles.flex}>
           <Text style={styles.title}>List a book</Text>
@@ -142,7 +163,7 @@ const CreateListingScreen = ({ navigation, route }: any) => {
           title="Your library is empty"
           body="Add a book you own first, then you can list it here."
         >
-          <AppButton label="Find books" onPress={() => navigation.navigate('AppTabs', { screen: 'Search' })} />
+          <AppButton label="Find books" onPress={() => navigation.navigate('Search')} />
         </EmptyState>
       ) : (
         <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -209,13 +230,13 @@ const CreateListingScreen = ({ navigation, route }: any) => {
                   accessibilityLabel={s?.name ?? id}
                   activeOpacity={0.85}
                   onPress={() => {
-                    const result = toggleInList(form.spotIds, id, MAX_LISTING_SPOTS);
+                    const result = toggleInList(form.spotIds, id, MAX_LISTING_SPOTS - (form.pins?.length ?? 0));
                     patch({ spotIds: result.list });
                     setLimitHit(result.limitReached);
                   }}
                   style={[styles.spotRow, !on && styles.spotRowOff]}
                 >
-                  <MapPin color={on ? colors.blue : colors.muted} size={18} />
+                  <MapPin color={on ? colors.accent : colors.muted} size={18} />
                   <View style={styles.flex}>
                     <Text style={styles.spotName}>{s?.name ?? id}</Text>
                     {s ? <Text style={styles.spotMeta}>{s.type}{s.city ? ` · ${s.city}` : ''}</Text> : null}
@@ -230,13 +251,42 @@ const CreateListingScreen = ({ navigation, route }: any) => {
                 </TouchableOpacity>
               );
             })}
+            {(form.pins ?? []).map((p, i) => (
+              <TouchableOpacity
+                key={`${p.lat}-${p.lng}`}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: true }}
+                accessibilityLabel={p.name}
+                activeOpacity={0.85}
+                onPress={() =>
+                  dialog.alert('Remove this pin?', p.name, [
+                    { text: 'Keep', style: 'cancel' },
+                    {
+                      text: 'Remove',
+                      style: 'destructive',
+                      onPress: () => patch({ pins: (form.pins ?? []).filter((_, j) => j !== i) }),
+                    },
+                  ])
+                }
+                style={styles.spotRow}
+              >
+                <MapPin color={colors.accent} size={18} />
+                <View style={styles.flex}>
+                  <Text style={styles.spotName}>{p.name}</Text>
+                  <Text style={styles.spotMeta}>Pinned on the map</Text>
+                </View>
+                <View style={styles.checked}>
+                  <Check color={colors.white} size={14} strokeWidth={3} />
+                </View>
+              </TouchableOpacity>
+            ))}
             {limitHit ? <Text style={styles.limit}>You can pick up to {MAX_LISTING_SPOTS} spots. Uncheck one to choose another.</Text> : null}
             <AppButton
               small
               variant="ghost"
-              label={offered.length === 0 ? '+ Choose meetup spots' : '+ Choose another spot (list or map)'}
+              label="+ Choose a spot or pin one on the map"
               style={styles.chooseSpots}
-              onPress={() => navigation.navigate('ChooseSpots', { selected: form.spotIds, max: MAX_LISTING_SPOTS })}
+              onPress={() => navigation.navigate('ChooseSpots', { selected: form.spotIds, pins: form.pins, max: MAX_LISTING_SPOTS })}
             />
 
             <SectionTitle title="Available times" hint="Optional" />
@@ -296,18 +346,18 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
   },
-  title: { fontSize: 22, fontWeight: '900', color: colors.ink },
+  title: { fontSize: 22, fontWeight: '900', color: colors.heading },
   subtitle: { fontSize: 13, color: colors.muted },
   loader: { marginTop: 60 },
   body: { paddingHorizontal: 20, paddingBottom: 24 },
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 10 },
-  section: { fontSize: 16, fontWeight: '800', color: colors.ink },
+  section: { fontSize: 16, fontWeight: '800', color: colors.heading },
   sectionHint: { fontSize: 12, fontWeight: '500', color: colors.muted },
   hint: { fontSize: 13, color: colors.muted, lineHeight: 19 },
   books: { gap: 12 },
   pick: { width: 84, gap: 6 },
   coverWrap: { borderRadius: 14 },
-  coverOn: { borderWidth: 3, borderColor: colors.blue, borderRadius: 14, overflow: 'hidden' },
+  coverOn: { borderWidth: 3, borderColor: colors.accent, borderRadius: 14, overflow: 'hidden' },
   check: {
     position: 'absolute',
     top: 6,
@@ -315,12 +365,12 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: colors.blue,
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pickTitle: { fontSize: 12, fontWeight: '500', color: colors.body },
-  pickTitleOn: { fontWeight: '700', color: colors.blue },
+  pickTitleOn: { fontWeight: '700', color: colors.accent },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   spotRow: {
     flexDirection: 'row',
@@ -329,13 +379,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.selected,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: colors.blue,
+    borderColor: colors.accent,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 8,
   },
   spotRowOff: { backgroundColor: colors.white, borderColor: colors.border },
-  checked: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
+  checked: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
   unchecked: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: colors.border },
   limit: { fontSize: 12, fontWeight: '600', color: colors.danger, marginBottom: 6 },
   spotName: { fontSize: 14, fontWeight: '700', color: colors.ink },

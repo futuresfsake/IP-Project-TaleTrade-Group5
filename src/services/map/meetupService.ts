@@ -215,6 +215,21 @@ export const getSpotIdsForBook = async (bookId: string): Promise<string[]> => {
   }
 };
 
+/**
+ * The active spots offering a book, listed (Feed) spots first, then the other spots its
+ * owners prefer. Unknown or inactive ids are skipped and nothing repeats.
+ */
+export const orderBookSpots = (
+  activeSpots: MeetupSpot[],
+  listingSpotIds: string[],
+  ownerSpotIds: string[],
+): MeetupSpot[] => {
+  const byId = new Map(activeSpots.map(s => [s.id, s]));
+  return Array.from(new Set([...listingSpotIds, ...ownerSpotIds]))
+    .map(id => byId.get(id))
+    .filter((s): s is MeetupSpot => !!s);
+};
+
 export const uniqueSpotIds = (rows: OwnerRow[]): string[] =>
   Array.from(new Set(rows.flatMap(r => r.spotIds || [])));
 

@@ -37,6 +37,17 @@ const createFirestoreStore = (db = getFirestore()) => {
       return snap.docs.map(d => ({ bookId: d.id, ...d.data() }));
     },
 
+    /** Every book in every library (an unfiltered collection-group read needs no index). */
+    async listOwnedBooks() {
+      const snap = await db.collectionGroup('myBooks').select('title', 'author', 'thumbnail').get();
+      return snap.docs.map(d => ({ ownerId: d.ref.parent.parent.id, bookId: d.id, ...d.data() }));
+    },
+
+    async listAllListings() {
+      const snap = await listings.get();
+      return snap.docs.map(withId);
+    },
+
     /** One batched read: which of these [uid, bookId] pairs still exist in a user's library. */
     async filterExistingMyBooks(pairs) {
       const existing = new Set();

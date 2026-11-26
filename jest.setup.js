@@ -41,4 +41,5 @@ jest.mock('@maplibre/maplibre-react-native', () => ({
   Map: 'Map',
   Camera: 'Camera',
   ViewAnnotation: 'ViewAnnotation',
+  Marker: 'Marker',
 }));

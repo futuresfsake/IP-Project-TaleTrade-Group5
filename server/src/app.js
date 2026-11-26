@@ -5,6 +5,7 @@ const { createAuthMiddleware } = require('./auth');
 const { createRateLimiter } = require('./rateLimit');
 const { createService } = require('./service');
 const { parseCoords, parseFeedQuery } = require('./validation');
+const { ApiError: HttpError } = require('./errors');
 const { badRequest } = require('./errors');
 
 const TYPES = ['mall', 'library', 'bookstore', 'cafe', 'campus', 'other'];
@@ -17,7 +18,7 @@ const wrap = handler => (req, res, next) => Promise.resolve(handler(req, res)).c
  *   bookProvider  - { getBook(id) } upstream book metadata
  *   verifyToken   - (idToken) => Promise<{ uid }>; Firebase Admin's verifyIdToken in production
  */
-const createApp = ({ store, bookProvider, verifyToken, now = Date.now, rateLimit = {} }) => {
+const createApp = ({ store, bookProvider, placeProvider, verifyToken, now = Date.now, rateLimit = {} }) => {
   const service = createService({ store, bookProvider, now });
   const app = express();
   app.disable('x-powered-by');
@@ -39,6 +40,33 @@ const createApp = ({ store, bookProvider, verifyToken, now = Date.now, rateLimit
 
   v1.get('/spots/:id', wrap(async (req, res) => {
     res.json(await service.getSpot(req.params.id, { uid: req.user.uid, coords: parseCoords(req.query) }));
+  }));
+
+  /** Name of the place at a coordinate (used for pins dropped on the map). */
+  v1.get('/places/reverse', wrap(async (req, res) => {
+    const coords = parseCoords(req.query);
+    if (!coords) throw badRequest('Send lat and lng.');
+    if (!placeProvider || !placeProvider.configured) {
+      throw new HttpError(503, 'places_unavailable', 'Place names are not configured on this server.');
+    }
+    let place;
+    try {
+      place = await placeProvider.reverse(coords);
+    } catch {
+      throw new HttpError(502, 'place_provider_unavailable', 'Place names are temporarily unavailable.');
+    }
+    if (!place) throw new HttpError(404, 'place_not_found', 'No known place there.');
+    res.json(place);
+  }));
+
+  // ---- Readers
+  v1.get('/users/:id/listings', wrap(async (req, res) => {
+    res.json({ items: await service.userListings(req.user.uid, req.params.id, { coords: parseCoords(req.query) }) });
+  }));
+
+  /** Who has which book, and where. Search badges and Book Detail both read this. */
+  v1.get('/availability', wrap(async (_req, res) => {
+    res.json(await service.availability());
   }));
 
   // ---- Books
@@ -76,7 +104,6 @@ const createApp = ({ store, bookProvider, verifyToken, now = Date.now, rateLimit
 
   app.use((_req, res) => res.status(404).json({ error: { code: 'not_found', message: 'Unknown endpoint.' } }));
 
-  // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {
     if (err instanceof ApiError) {
       return res.status(err.status).json({ error: { code: err.code, message: err.message, details: err.details } });

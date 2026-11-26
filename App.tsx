@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, LogBox } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { getAuth, onAuthStateChanged, onIdTokenChanged, FirebaseAuthTypes } from '@react-native-firebase/auth';
@@ -10,8 +10,14 @@ import PickAGenreScreen from './src/screens/PickAGenreScreen';
 import GenreDetailScreen from './src/screens/GenreDetailScreen';
 import BookDetailScreen from './src/screens/BookDetailScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import SearchScreen from './src/screens/SearchScreen';
+import MapScreen from './src/screens/map/MapScreen';
 import CreateListingScreen from './src/screens/feed/CreateListingScreen';
+import { DialogHost } from './src/component/ui/AppDialog';
 import ChooseSpotsScreen from './src/screens/feed/ChooseSpotsScreen';
+
+// Development-only warning banner: hide the map library's own style notices.
+LogBox?.ignoreLogs(['MapLibre Native']);
 
 const RootStack = createNativeStackNavigator();
 
@@ -40,7 +46,7 @@ const App = () => {
   if (initializing) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4A68BE" />
+        <ActivityIndicator size="large" color="#6C63A8" />
       </View>
     );
   }
@@ -65,13 +71,7 @@ const App = () => {
               
               <RootStack.Screen 
                 name="UserProfileView" 
-                component={ProfileScreen} 
-                options={{ 
-                    headerShown: true, 
-                    title: 'Reader Profile',
-                    headerTintColor: '#6C63FF',
-                    headerStyle: { backgroundColor: '#F5E9CF' }
-                }} 
+                component={ProfileScreen}
                 key="user-profile-view"
               />
 
@@ -79,14 +79,21 @@ const App = () => {
               <RootStack.Screen 
                 name="GenreDetail" 
                 component={GenreDetailScreen} 
-                options={({ route }: any) => ({ 
-                    headerShown: true, 
-                    title: route.params?.genreName || 'Explore', // Reflects the genre name
-                    headerTintColor: '#6C63FF',
-                    headerStyle: { backgroundColor: '#F5E9CF' },
-                    headerTitleStyle: { fontWeight: '900' }
-                })} 
                 key="genre-detail-screen"
+              />
+
+              {/* Opened from the search bar on Home */}
+              <RootStack.Screen
+                name="Search"
+                component={SearchScreen}
+                key="search-screen"
+              />
+
+              {/* Opened from Home, Book Detail and Feed posts */}
+              <RootStack.Screen
+                name="Map"
+                component={MapScreen}
+                key="meetup-map-screen"
               />
 
               <RootStack.Screen
@@ -103,13 +110,7 @@ const App = () => {
 
               <RootStack.Screen
                 name="BookDetail"
-                component={BookDetailScreen} 
-                options={{ 
-                  headerShown: true, 
-                  title: 'Book Details',
-                  headerTintColor: '#6C63FF',
-                  headerStyle: { backgroundColor: '#F5E9CF' } 
-                }} 
+                component={BookDetailScreen}
                 key="book-detail-screen"
               />
             </>
@@ -122,6 +123,7 @@ const App = () => {
           />
         )}
       </RootStack.Navigator>
+      <DialogHost />
     </NavigationContainer>
   );
 };

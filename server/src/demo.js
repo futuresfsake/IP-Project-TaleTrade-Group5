@@ -15,6 +15,7 @@ const { getAuth } = require('firebase-admin/auth');
 const { createApp } = require('./app');
 const { createMemoryStore } = require('./store/memoryStore');
 const { createGoogleBooksProvider } = require('./bookProvider');
+const { createMapTilerProvider } = require('./placeProvider');
 const { partitionSpots } = require('../../scripts/seedMeetupSpots');
 
 if (process.env.NODE_ENV === 'production') {
@@ -108,6 +109,7 @@ initializeApp({ projectId: readProjectId() });
 const app = createApp({
   store,
   bookProvider: createGoogleBooksProvider({ apiKey: process.env.GOOGLE_BOOKS_API_KEY }),
+  placeProvider: createMapTilerProvider({ apiKey: process.env.MAPTILER_API_KEY }),
   verifyToken: token => getAuth().verifyIdToken(token),
 });
 

@@ -24,6 +24,12 @@ const createMemoryStore = ({ spots = [], users = {}, myBooks = {}, wishlists = {
     async listMyBooks(uid) {
       return (myBooks[uid] || []).map(b => ({ ...b }));
     },
+    async listOwnedBooks() {
+      return Object.entries(myBooks).flatMap(([ownerId, list]) => list.map(b => ({ ownerId, ...b })));
+    },
+    async listAllListings() {
+      return [...listingMap.values()].map(l => ({ ...l }));
+    },
     async filterExistingMyBooks(pairs) {
       const existing = new Set();
       pairs.forEach(([uid, bookId]) => {

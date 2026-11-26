@@ -1,7 +1,7 @@
 // Community Feed post: owner, book, availability, meetup spot and actions.
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Bookmark, MapPin, Repeat } from 'lucide-react-native';
+import { Bookmark, ChevronRight, MapPin, Repeat } from 'lucide-react-native';
 import { colors, shadow } from '../../theme/colors';
 import { formatDistance } from '../../services/map/locationService';
 import { CONDITION_LABELS, describeExchange, spotSummary, timeAgo } from '../../services/feedHelpers';
@@ -14,24 +14,38 @@ interface ListingCardProps {
   onOpenOwner: (item: FeedItem) => void;
   onRequestMeetup: (item: FeedItem) => void;
   onSave: (item: FeedItem) => void;
-  /** Shown instead of Request meetup / save when the post is the viewer's own. */
+  /** Shown instead of the save button when the post is the viewer's own. */
   onEdit?: (item: FeedItem) => void;
   now?: number;
 }
 
 const ListingCard = ({ item, onOpenBook, onOpenOwner, onRequestMeetup, onSave, onEdit, now }: ListingCardProps) => {
   const { owner, book } = item;
-  const reserved = item.status === 'reserved';
 
   return (
     <View style={styles.card} testID={`listing-${item.id}`}>
-      <TouchableOpacity style={styles.ownerRow} onPress={() => onOpenOwner(item)} activeOpacity={0.7}>
-        <Avatar name={owner.username} uri={owner.photoURL} size={40} />
-        <View style={styles.flex}>
-          <Text style={styles.ownerName} numberOfLines={1}>{item.isMine ? `${owner.username} (you)` : owner.username}</Text>
-          <Text style={styles.time}>{timeAgo(item.updatedAt, now)}</Text>
-        </View>
-      </TouchableOpacity>
+      <View style={styles.ownerRow}>
+        <TouchableOpacity style={styles.owner} onPress={() => onOpenOwner(item)} activeOpacity={0.7}>
+          <Avatar name={owner.username} uri={owner.photoURL} size={40} />
+          <View style={styles.flex}>
+            <Text style={styles.ownerName} numberOfLines={1}>{item.isMine ? `${owner.username} (you)` : owner.username}</Text>
+            <Text style={styles.time}>{timeAgo(item.updatedAt, now)}</Text>
+          </View>
+        </TouchableOpacity>
+        {item.isMine ? (
+          <AppButton small variant="secondary" label="Edit" onPress={() => onEdit?.(item)} />
+        ) : (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={item.wishlisted ? 'On your wishlist' : 'Save to wishlist'}
+            style={styles.save}
+            onPress={() => onSave(item)}
+            activeOpacity={0.7}
+          >
+            <Bookmark color={colors.purple} size={22} fill={item.wishlisted ? colors.purple : 'none'} />
+          </TouchableOpacity>
+        )}
+      </View>
 
       <TouchableOpacity style={styles.bookRow} onPress={() => onOpenBook(item)} activeOpacity={0.8}>
         <BookCover uri={book.thumbnail} width={76} height={112} />
@@ -51,7 +65,13 @@ const ListingCard = ({ item, onOpenBook, onOpenOwner, onRequestMeetup, onSave, o
         </View>
       </TouchableOpacity>
 
-      <View style={styles.meetup}>
+      <TouchableOpacity
+        style={styles.meetup}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel="Show the meetup spots on a map"
+        onPress={() => onRequestMeetup(item)}
+      >
         <MapPin color={colors.purple} size={18} />
         <View style={styles.flex}>
           <Text style={styles.meetLabel}>Meet at</Text>
@@ -61,34 +81,11 @@ const ListingCard = ({ item, onOpenBook, onOpenOwner, onRequestMeetup, onSave, o
         {item.nearestDistanceKm !== null ? (
           <Text style={styles.distance}>{formatDistance(item.nearestDistanceKm)}</Text>
         ) : null}
-      </View>
+        <ChevronRight color={colors.muted} size={18} />
+      </TouchableOpacity>
 
       {item.note ? <Text style={styles.note}>“{item.note}”</Text> : null}
 
-      {item.isMine ? (
-        <View style={styles.actions}>
-          <AppButton small variant="primary" style={styles.flex} label="Edit listing" onPress={() => onEdit?.(item)} />
-        </View>
-      ) : (
-        <View style={styles.actions}>
-          <AppButton
-            small
-            variant="primary"
-            style={styles.flex}
-            label={reserved ? 'View on map' : 'Request meetup'}
-            onPress={() => onRequestMeetup(item)}
-          />
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel={item.wishlisted ? 'On your wishlist' : 'Save to wishlist'}
-            style={styles.save}
-            onPress={() => onSave(item)}
-            activeOpacity={0.7}
-          >
-            <Bookmark color={colors.purple} size={18} fill={item.wishlisted ? colors.purple : 'none'} />
-          </TouchableOpacity>
-        </View>
-      )}
     </View>
   );
 };
@@ -97,6 +94,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   card: { backgroundColor: colors.white, borderRadius: 24, padding: 16, gap: 14, ...shadow },
   ownerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  owner: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   ownerName: { fontSize: 15, fontWeight: '700', color: colors.ink },
   time: { fontSize: 12, color: colors.muted },
   bookRow: { flexDirection: 'row', gap: 14 },
@@ -114,8 +112,7 @@ const styles = StyleSheet.create({
   meetTimes: { fontSize: 12, color: colors.body, marginTop: 1 },
   distance: { fontSize: 12, fontWeight: '700', color: colors.purple },
   note: { fontSize: 13, color: colors.body, fontStyle: 'italic', lineHeight: 19 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  save: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.chip, alignItems: 'center', justifyContent: 'center' },
+  save: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 });
 
 export default React.memo(ListingCard);

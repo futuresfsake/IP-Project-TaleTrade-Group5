@@ -6,11 +6,13 @@ import {
   StyleProp,
   StyleSheet,
   Text,
+  TextInput,
+  TextInputProps,
   TouchableOpacity,
   View,
   ViewStyle,
 } from 'react-native';
-import { Book } from 'lucide-react-native';
+import { Book, ChevronLeft } from 'lucide-react-native';
 import { colors, statusColors } from '../../theme/colors';
 import { initialsOf } from '../../services/feedHelpers';
 import type { ListingStatus } from '../../types';
@@ -83,12 +85,12 @@ const buttonPalette: Record<ButtonVariant, { container: ViewStyle; text: { color
     },
     text: { color: colors.white },
   },
-  secondary: { container: { backgroundColor: colors.chip }, text: { color: colors.blue } },
+  secondary: { container: { backgroundColor: colors.chip }, text: { color: colors.accent } },
   danger: {
     container: { borderWidth: 1.5, borderColor: colors.danger, backgroundColor: 'transparent' },
     text: { color: colors.danger },
   },
-  ghost: { container: { backgroundColor: 'transparent' }, text: { color: colors.blue } },
+  ghost: { container: { backgroundColor: 'transparent' }, text: { color: colors.accent } },
 };
 
 // -------------------------------------------------------------------------------- Chip
@@ -202,7 +204,76 @@ export const EmptyState = ({ icon, title, body, children }: EmptyStateProps) => 
   </View>
 );
 
+// ------------------------------------------------------------------- Headers and fields
+export const BackButton = ({ onPress }: { onPress: () => void }) => (
+  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" style={styles.back} onPress={onPress}>
+    <ChevronLeft color={colors.accent} size={22} />
+  </TouchableOpacity>
+);
+
+interface ScreenHeaderProps {
+  title: string;
+  subtitle?: string;
+  onBack?: () => void;
+  right?: React.ReactNode;
+}
+
+export const ScreenHeader = ({ title, subtitle, onBack, right }: ScreenHeaderProps) => (
+  <View style={styles.header}>
+    {onBack ? <BackButton onPress={onBack} /> : null}
+    <View style={styles.headerTitles}>
+      <Text style={[styles.headerTitle, onBack ? styles.headerTitleStacked : null]} numberOfLines={1}>{title}</Text>
+      {subtitle ? <Text style={styles.headerSubtitle}>{subtitle}</Text> : null}
+    </View>
+    {right}
+  </View>
+);
+
+export const Field = ({ label, style, ...input }: TextInputProps & { label: string }) => (
+  <View style={styles.field}>
+    <Text style={styles.fieldLabel}>{label}</Text>
+    <TextInput
+      accessibilityLabel={label}
+      placeholderTextColor={colors.muted}
+      style={[styles.fieldInput, input.multiline ? styles.fieldMultiline : null, style]}
+      {...input}
+    />
+  </View>
+);
+
 const styles = StyleSheet.create({
+  header: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
+  headerTitles: { flex: 1 },
+  headerTitle: { fontSize: 28, fontWeight: '900', color: colors.accent },
+  headerTitleStacked: { fontSize: 22, color: colors.heading },
+  headerSubtitle: { fontSize: 14, color: colors.muted },
+  back: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: colors.ink,
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  field: { gap: 6 },
+  fieldLabel: { fontSize: 13, fontWeight: '700', color: colors.ink },
+  fieldInput: {
+    minHeight: 52,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    paddingHorizontal: 16,
+    fontSize: 15,
+    color: colors.ink,
+  },
+  fieldMultiline: { minHeight: 96, paddingTop: 14, textAlignVertical: 'top' },
+
   button: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   buttonRegular: { height: 52, paddingHorizontal: 24, borderRadius: 20 },
   buttonSmall: { height: 40, paddingHorizontal: 16, borderRadius: 14 },
@@ -221,7 +292,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.border,
   },
-  chipSelected: { backgroundColor: colors.blue, borderColor: colors.blue },
+  chipSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
   chipText: { fontSize: 13, fontWeight: '600', color: colors.body },
   chipTextSelected: { color: colors.white },
 
@@ -249,7 +320,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   segmentText: { fontSize: 14, fontWeight: '600', color: colors.muted },
-  segmentTextOn: { color: colors.blue, fontWeight: '700' },
+  segmentTextOn: { color: colors.accent, fontWeight: '700' },
 
   cover: { backgroundColor: colors.cover, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
 
@@ -266,7 +337,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 20,
   },
-  emptyTitle: { fontSize: 22, fontWeight: '800', color: colors.ink, textAlign: 'center' },
+  emptyTitle: { fontSize: 22, fontWeight: '800', color: colors.heading, textAlign: 'center' },
   emptyBody: { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 21, marginTop: 8 },
   emptyActions: { alignSelf: 'stretch', marginTop: 24, gap: 10 },
 });

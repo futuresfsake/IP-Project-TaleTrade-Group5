@@ -11,7 +11,11 @@ import {
   toBookData,
   toggleInList,
   validateListingForm,
+  newestFirst,
+  ownersPill,
 } from '../src/services/feedHelpers';
+import { buildNearby, workKey } from '../src/services/nearbyService';
+import type { BookWork } from '../src/types';
 import type { ListingForm } from '../src/services/feedHelpers';
 
 const validForm: ListingForm = {
@@ -84,6 +88,38 @@ describe('feed helpers', () => {
     expect(emptyFeedCopy('wishlist').title).toMatch(/wishlist/i);
     expect(emptyFeedCopy('nearby').title).toMatch(/nearby/i);
     expect(emptyFeedCopy('all').title).toMatch(/shared/i);
+  });
+});
+
+describe('nearby books', () => {
+  const spot = (id: string, lat: number, lng: number) => ({
+    id, name: id, type: 'mall' as const, city: null, address: null, lat, lng, openHours: null, safetyNote: null,
+  });
+  const owner = (id: string, spots: ReturnType<typeof spot>[]) => ({ id, username: id, photoURL: null, listing: null, spots });
+  const works: BookWork[] = [
+    {
+      key: 'dune|frank herbert', bookIds: ['e1', 'e2'], title: 'Dune', author: 'Frank Herbert', thumbnail: null,
+      owners: [owner('me', [spot('ayala', 10.3187, 123.9053)]), owner('u1', [spot('ayala', 10.3187, 123.9053)]), owner('u2', [spot('pin-x', 10.319, 123.9055)]), owner('u3', [spot('far', 14.6, 121)])],
+    },
+  ];
+  const nearby = buildNearby(works, { preferred: [spot('ayala', 10.3187, 123.9053)], coords: null }, 'me');
+
+  it('counts nearby owners (not you), including pins beside your spot', () => {
+    expect(nearby.books.map(b => [b.title, b.count])).toEqual([['Dune', 2]]);
+  });
+
+  it('matches another edition by title and first author, like the server', () => {
+    expect(workKey('DUNE!', 'Frank Herbert, Someone')).toBe('dune|frank herbert');
+    expect(nearby.countFor({ id: 'unknown', title: 'Dune', author: 'Frank Herbert' })).toBe(2);
+    expect(nearby.countFor({ id: 'e2' })).toBe(2);
+    expect(nearby.countFor({ id: 'nope', title: 'Emma', author: 'Austen' })).toBe(0);
+  });
+
+  it('labels wishlist availability and sorts newest first', () => {
+    expect(ownersPill(1).label).toBe('1 owner nearby');
+    expect(ownersPill(0).label).toBe('No owners nearby');
+    const sorted = newestFirst([{ id: 'old', addedAt: { seconds: 1 } }, { id: 'pending', addedAt: null }, { id: 'new', addedAt: { seconds: 9 } }]);
+    expect(sorted.map(i => i.id)).toEqual(['pending', 'new', 'old']);
   });
 });
 

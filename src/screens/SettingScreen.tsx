@@ -1,11 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, Text, StyleSheet, TextInput, TouchableOpacity, 
-  SafeAreaView, Alert, ScrollView, KeyboardAvoidingView, 
-  Platform, StatusBar as RNStatusBar, Image,
-  Linking, PermissionsAndroid 
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity,
+   ScrollView, KeyboardAvoidingView,
+  Platform, Image, ActivityIndicator,
+  Linking, PermissionsAndroid,
 } from 'react-native';
-import { ChevronLeft, User, Trash2, Save, Camera, CheckCircle, AlignLeft, LogOut, MapPin } from 'lucide-react-native';
+import { dialog } from '../component/ui/AppDialog';
+import { ChevronRight, User, Trash2, CheckCircle, LogOut } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
+import { AppButton, Field, ScreenHeader } from '../component/feed/ui';
+import { colors, shadow } from '../theme/colors';
 import { getAuth, signOut as firebaseSignOut, deleteUser } from '@react-native-firebase/auth';
 import { getFirestore, doc, collection, getDocs, writeBatch } from '@react-native-firebase/firestore';
 import { updateUserInDb, getUserProfile, updateUserBio, updateUserProfileImage, updateUserSocialLink } from '../services/userService';
@@ -18,18 +23,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Then in your fetch:
 // const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload` ...);
 
-const COLORS = {
-  primaryBlue: '#4A68BE',
-  softPurple: '#7E6FB0',
-  creamBg: '#F5E9CF',
-  white: '#FFFFFF',
-  danger: '#FF6B6B',
-  inputBg: '#F9F7F2',
-  success: '#4CAF50',
-  divider: '#EEE'
-};
-
 const SettingScreen = ({ navigation }: any) => {
+  const insets = useSafeAreaInsets();
   const [newName, setNewName] = useState('');
   const [newBio, setNewBio] = useState('');
   const [newSocialLink, setNewSocialLink] = useState('');
@@ -38,38 +33,86 @@ const SettingScreen = ({ navigation }: any) => {
   const [spots, setSpots] = useState<MeetupSpot[]>([]);
   const [selectedSpots, setSelectedSpots] = useState<string[]>([]);
   const [spotLimitHit, setSpotLimitHit] = useState(false);
-  const [savingSpots, setSavingSpots] = useState(false);
+  const [savedSpots, setSavedSpots] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  // The profile fields as last loaded, to know whether anything is unsaved.
+  const [original, setOriginal] = useState<{ name: string; bio: string; link: string } | null>(null);
+  const [done, setDone] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
+  const dirty =
+    !done &&
+    !!original &&
+    (newName !== original.name ||
+      newBio !== original.bio ||
+      newSocialLink !== original.link ||
+      tempImage !== profileImage ||
+      selectedSpots.join(',') !== savedSpots.join(','));
+  usePreventRemove(dirty, ({ data }) => {
+    dialog.alert('Discard your changes?', 'They have not been saved.', [
+      { text: 'Keep editing', style: 'cancel' },
+      {
+        text: 'Discard',
+        style: 'destructive',
+        onPress: () => {
+          // Put the saved values back, in case this screen is shown again.
+          if (original) {
+            setNewName(original.name);
+            setNewBio(original.bio);
+            setNewSocialLink(original.link);
+          }
+          setTempImage(profileImage);
+          setSelectedSpots(savedSpots);
+          navigation.dispatch(data.action);
+        },
+      },
+    ]);
+  });
   useEffect(() => {
-    loadUserData();
-  }, []);
+    if (done) navigation.goBack();
+  }, [done, navigation]);
+
+  // Load every time the screen is shown, unless that would overwrite unsaved edits.
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
+  useFocusEffect(
+    useCallback(() => {
+      if (!dirtyRef.current) loadUserData();
+    }, []),
+  );
 
   const loadUserData = async () => {
     const user = getAuth().currentUser;
-    if (user) {
-      const [userData, activeSpots] = await Promise.all([
-        getUserProfile(user.uid),
-        getActiveSpots().catch((): MeetupSpot[] | null => null),
-      ]);
-      const saved: string[] = Array.isArray(userData?.preferredSpots) ? userData.preferredSpots : [];
-      if (activeSpots) {
-        setSpots(activeSpots);
-        // Drop saved picks that are no longer active so they can't be re-saved.
-        const activeIds = new Set(activeSpots.map(s => s.id));
-        setSelectedSpots(saved.filter(id => activeIds.has(id)));
-      } else {
-        // Spots failed to load: keep the saved picks untouched (the card shows its empty state).
-        setSelectedSpots(saved);
-      }
-      if (userData) {
-        setNewName(userData.username || '');
-        setNewBio(userData.bio || '');
-        setNewSocialLink(userData.socialLink || '');
-        if (userData.photoURL) {
-          setProfileImage(userData.photoURL);
-          setTempImage(userData.photoURL);
-        }
-      }
+    if (!user) return;
+    setLoadFailed(false);
+    // Spots load separately, so a slow spot list never leaves the profile fields empty.
+    const spotsRequest = getActiveSpots().catch((): MeetupSpot[] | null => null);
+    const userData = await getUserProfile(user.uid);
+    if (!userData) {
+      setLoadFailed(true);
+      return;
+    }
+    const fields = { name: userData.username || '', bio: userData.bio || '', link: userData.socialLink || '' };
+    setNewName(fields.name);
+    setNewBio(fields.bio);
+    setNewSocialLink(fields.link);
+    setOriginal(fields);
+    setProfileImage(userData.photoURL || null);
+    setTempImage(userData.photoURL || null);
+
+    const activeSpots = await spotsRequest;
+    const saved: string[] = Array.isArray(userData.preferredSpots) ? userData.preferredSpots : [];
+    if (activeSpots) {
+      setSpots(activeSpots);
+      // Drop saved picks that are no longer active so they can't be re-saved.
+      const activeIds = new Set(activeSpots.map(s => s.id));
+      const stillActive = saved.filter(id => activeIds.has(id));
+      setSelectedSpots(stillActive);
+      setSavedSpots(stillActive);
+    } else {
+      // Spots failed to load: keep the saved picks untouched (the card shows its empty state).
+      setSelectedSpots(saved);
+      setSavedSpots(saved);
     }
   };
 
@@ -90,7 +133,7 @@ const SettingScreen = ({ navigation }: any) => {
   const handlePickImage = async () => {
     const hasPermission = await requestGalleryPermission();
     if (!hasPermission) {
-      Alert.alert("Permission Denied", "Open settings to allow gallery access.", 
+      dialog.alert("Permission Denied", "Open settings to allow gallery access.", 
         [{ text: "Cancel" }, { text: "Open Settings", onPress: () => Linking.openSettings() }]
       );
       return;
@@ -103,75 +146,29 @@ const SettingScreen = ({ navigation }: any) => {
     });
   };
 
-  const handleSavePhoto = async () => {
-    const user = getAuth().currentUser;
+  /** Uploads the newly picked photo to Cloudinary and stores its URL. Throws on failure. */
+  const uploadPhoto = async (uid: string, uri: string) => {
+    // Create the form data for the cloud upload
+    const data = new FormData();
+    data.append('file', { uri, type: 'image/jpeg', name: 'profile.jpg' } as any);
+    // Use your newly created preset and cloud name
+    data.append('upload_preset', 'TaleTrade');
+    const cloudName = 'dg4xa8pjg';
 
-    // 1. Check if we have a temporary image to upload
-    if (tempImage && user) {
-      try {
-        // Create the form data for the cloud upload
-        const data = new FormData();
-        data.append('file', {
-          uri: tempImage,
-          type: 'image/jpeg',
-          name: 'profile.jpg',
-        } as any);
-        
-        // Use your newly created preset and cloud name
-        data.append('upload_preset', 'TaleTrade'); 
-        const cloudName = 'dg4xa8pjg'; 
-
-        // 2. Perform the upload to Cloudinary
-        const response = await fetch(
-          `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-          {
-            method: 'POST',
-            body: data,
-          }
-        );
-
-        const result = await response.json();
-        
-        if (result.secure_url) {
-          // 3. Save the permanent HTTPS URL to Firestore
-          await updateUserProfileImage(user.uid, result.secure_url);
-          
-          // Update local state so the UI reflects the saved image
-          setProfileImage(result.secure_url);
-          
-          Alert.alert("Success! ✨", "Profile picture is now saved.");
-        } else {
-          // Log the error if Cloudinary returns one (e.g., preset name typo)
-          console.error("Cloudinary Error:", result);
-          throw new Error("Upload failed");
-        }
-      } catch (error) {
-        console.error("Save Error:", error);
-        Alert.alert("Error", "Cloud upload failed. Please check your internet connection.");
-      }
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST',
+      body: data,
+    });
+    const result = await response.json();
+    if (!result.secure_url) {
+      // Log the error if Cloudinary returns one (e.g., preset name typo)
+      console.error('Cloudinary Error:', result);
+      throw new Error('Cloud upload failed. Please check your internet connection.');
     }
-  };
-
-  const handleUpdateProfile = async () => {
-    const user = getAuth().currentUser;
-    if (!user) return;
-
-    if (newName.trim().length < 3) {
-      Alert.alert("Error", "Username is too short!");
-      return;
-    }
-
-    try {
-      await updateUserInDb(user.uid, newName.trim());
-      await updateUserBio(user.uid, newBio.trim());
-      await updateUserSocialLink(user.uid, newSocialLink.trim());
-      
-      Alert.alert("Success!", "Profile updated ✨", [
-        { text: "OK", onPress: () => navigation.goBack() }
-      ]);
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
-    }
+    // Save the permanent HTTPS URL to Firestore
+    await updateUserProfileImage(uid, result.secure_url);
+    setProfileImage(result.secure_url);
+    setTempImage(result.secure_url);
   };
 
   const handleToggleSpot = (spotId: string) => {
@@ -180,23 +177,42 @@ const SettingScreen = ({ navigation }: any) => {
     setSpotLimitHit(result.limitReached);
   };
 
-  const handleSaveSpots = async () => {
+  /** Saves everything on this screen: photo, profile fields and meetup spots. */
+  const handleSave = async () => {
     const user = getAuth().currentUser;
-    if (!user) return;
+    // Never save before the profile has loaded: empty fields would overwrite it.
+    if (!user || !original) return;
 
-    setSavingSpots(true);
+    if (newName.trim().length < 3) {
+      dialog.alert("Error", "Username is too short!");
+      return;
+    }
+
+    setSaving(true);
     try {
-      await setPreferredSpots(user.uid, selectedSpots);
-      Alert.alert("Saved!", "Your meetup spots are updated 📍");
+      if (tempImage && tempImage !== profileImage) {
+        await uploadPhoto(user.uid, tempImage);
+      }
+      await updateUserInDb(user.uid, newName.trim());
+      await updateUserBio(user.uid, newBio.trim());
+      await updateUserSocialLink(user.uid, newSocialLink.trim());
+      // Only rewrite the spots when they changed (it also updates every owned book).
+      if (selectedSpots.join(',') !== savedSpots.join(',')) {
+        await setPreferredSpots(user.uid, selectedSpots);
+        setSavedSpots(selectedSpots);
+      }
+      dialog.alert("Success!", "Your changes are saved ✨", [
+        { text: "OK", onPress: () => setDone(true) }
+      ]);
     } catch (error: any) {
-      Alert.alert("Error", error.message || "Could not save meetup spots.");
+      dialog.alert("Error", error.message || "Could not save your changes.");
     } finally {
-      setSavingSpots(false);
+      setSaving(false);
     }
   };
 
   const handleLogout = () => {
-    Alert.alert("Log Out", "Are you sure? 🥺", [
+    dialog.alert("Log Out", "Are you sure? 🥺", [
       { text: "Stay", style: "cancel" },
       { text: "Log Out", style: "destructive", onPress: () => firebaseSignOut(getAuth()) }
     ]);
@@ -205,7 +221,7 @@ const SettingScreen = ({ navigation }: any) => {
   const handleDeleteAccount = () => {
     const user = getAuth().currentUser;
     if (!user) return;
-    Alert.alert("Wait! 🥺", "This will delete your account permanently. Proceed?", [
+    dialog.alert("Wait! 🥺", "This will delete your account permanently. Proceed?", [
       { text: "Cancel", style: "cancel" },
       { text: "Delete Everything", style: "destructive", onPress: async () => {
         try {
@@ -215,7 +231,7 @@ const SettingScreen = ({ navigation }: any) => {
             ? new Date(user.metadata.lastSignInTime).getTime()
             : 0;
           if (Date.now() - lastSignIn > 5 * 60 * 1000) {
-            Alert.alert("Security Check", "Please log out and log back in before deleting.");
+            dialog.alert("Security Check", "Please log out and log back in before deleting.");
             return;
           }
 
@@ -239,114 +255,67 @@ const SettingScreen = ({ navigation }: any) => {
           await AsyncStorage.removeItem('user_profile_image');
           await deleteUser(user);
         } catch { 
-          Alert.alert("Security Check", "Please log out and log back in before deleting."); 
+          dialog.alert("Security Check", "Please log out and log back in before deleting."); 
         }
       }}
     ]);
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backCircle}>
-          <ChevronLeft color={COLORS.primaryBlue} size={26} strokeWidth={2.5} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Account Settings</Text>
-        <View style={{ width: 45 }} />
-      </View>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <ScreenHeader title="Settings" subtitle="Manage your profile and account" onBack={() => navigation.goBack()} />
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.iconWrapper}><Camera color={COLORS.softPurple} size={20} /></View>
-              <Text style={styles.sectionTitle}>Profile Picture</Text>
-            </View>
-            <View style={styles.imagePickerContainer}>
-              <View style={styles.imageWrapper}>
+      {!original ? (
+        <View style={styles.pending}>
+          {loadFailed ? (
+            <>
+              <Text style={styles.hint}>Couldn’t load your profile. Check your connection.</Text>
+              <AppButton label="Try again" onPress={loadUserData} />
+            </>
+          ) : (
+            <ActivityIndicator size="large" color={colors.primary} />
+          )}
+        </View>
+      ) : (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Profile photo</Text>
+            <View style={styles.photoRow}>
+              <View style={styles.photo}>
                 {tempImage ? (
-                  <Image source={{ uri: tempImage }} style={styles.previewImage} />
+                  <Image source={{ uri: tempImage }} style={styles.photoImage} />
                 ) : (
-                  <View style={[styles.previewImage, styles.placeholderImage]}>
-                    <User color={COLORS.softPurple} size={40} />
-                  </View>
+                  <User color={colors.purple} size={28} />
                 )}
               </View>
-              <View style={styles.buttonRow}>
-                <TouchableOpacity style={styles.imagePickerBtn} onPress={handlePickImage}>
-                  <Text style={styles.imagePickerBtnText}>Change Photo</Text>
-                </TouchableOpacity>
-                {tempImage !== profileImage && (
-                  <TouchableOpacity style={styles.savePhotoBtn} onPress={handleSavePhoto}>
-                    <CheckCircle color={COLORS.white} size={16} />
-                    <Text style={styles.savePhotoBtnText}>Save</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+              <AppButton small variant="secondary" label="Change photo" onPress={handlePickImage} />
             </View>
           </View>
 
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.iconWrapper}><AlignLeft color={COLORS.softPurple} size={20} /></View>
-              <Text style={styles.sectionTitle}>Public Bio</Text>
-            </View>
-            
-            <Text style={styles.label}>Username</Text>
-            <TextInput
-              style={styles.input}
-              value={newName}
-              onChangeText={setNewName}
-              placeholder="Your display name"
-              placeholderTextColor="#AAA"
-            />
-
-            <Text style={styles.label}>About Me</Text>
-            <TextInput
-              style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
-              value={newBio}
-              onChangeText={setNewBio}
-              placeholder="Tell us about your favorite books..."
-              placeholderTextColor="#AAA"
-              multiline
-              numberOfLines={4}
-            />
-
-            <Text style={styles.label}>Contact Link (FB, IG, etc.)</Text>
-            <TextInput
-              style={styles.input}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Public profile</Text>
+            <Field label="Username" value={newName} onChangeText={setNewName} placeholder="Your display name" />
+            <Field label="About me" value={newBio} onChangeText={setNewBio} placeholder="Tell us about your favorite books..." multiline />
+            <Field
+              label="Contact link (FB, IG, etc.)"
               value={newSocialLink}
               onChangeText={setNewSocialLink}
               placeholder="https://facebook.com/yourprofile"
-              placeholderTextColor="#AAA"
               autoCapitalize="none"
               autoCorrect={false}
             />
-
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleUpdateProfile}>
-              <Save color={COLORS.white} size={18} />
-              <Text style={styles.btnText}>Save Profile</Text>
-            </TouchableOpacity>
           </View>
 
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.iconWrapper}><MapPin color={COLORS.softPurple} size={20} /></View>
-              <Text style={styles.sectionTitle}>Where I can meet</Text>
-            </View>
-
-            <Text style={styles.spotHint}>
-              Pick up to {MAX_PREFERRED_SPOTS} public places. Others will see these next to your books.
-            </Text>
-            <Text style={[styles.spotCounter, spotLimitHit && styles.spotLimitText]}>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Meetup preferences</Text>
+            <Text style={[styles.hint, spotLimitHit && styles.limit]}>
               {spotLimitHit
                 ? `You can only pick ${MAX_PREFERRED_SPOTS} spots. Deselect one to choose another.`
-                : `${selectedSpots.length}/${MAX_PREFERRED_SPOTS} selected`}
+                : `Pick up to ${MAX_PREFERRED_SPOTS} public places · ${selectedSpots.length}/${MAX_PREFERRED_SPOTS} selected`}
             </Text>
-
             {spots.length === 0 ? (
-              <Text style={styles.spotHint}>No meetup spots are available yet.</Text>
+              <Text style={styles.hint}>No meetup spots are available yet.</Text>
             ) : (
               spots.map(spot => {
                 const selected = selectedSpots.includes(spot.id);
@@ -358,81 +327,60 @@ const SettingScreen = ({ navigation }: any) => {
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: selected }}
                   >
-                    <View style={styles.spotInfo}>
+                    <View style={styles.flex}>
                       <Text style={styles.spotName}>{spot.name}</Text>
                       <Text style={styles.spotMeta}>{spot.type} · {spot.city}</Text>
                     </View>
-                    {selected && <CheckCircle color={COLORS.primaryBlue} size={22} />}
+                    {selected && <CheckCircle color={colors.accent} size={20} />}
                   </TouchableOpacity>
                 );
               })
             )}
-
-            <TouchableOpacity
-              style={[styles.primaryBtn, savingSpots && styles.btnDisabled]}
-              onPress={handleSaveSpots}
-              disabled={savingSpots || spots.length === 0}
-            >
-              <Save color={COLORS.white} size={18} />
-              <Text style={styles.btnText}>{savingSpots ? 'Saving...' : 'Save Meetup Spots'}</Text>
-            </TouchableOpacity>
           </View>
 
-          <View style={styles.dangerColumn}>
-            <TouchableOpacity style={[styles.dangerBtn, styles.logoutBtn]} onPress={handleLogout}>
-              <LogOut color={COLORS.danger} size={18} />
-              <Text style={styles.dangerBtnText}>Log Out of Account</Text>
-            </TouchableOpacity>
+          <AppButton label="Save changes" onPress={handleSave} loading={saving} />
 
-            <TouchableOpacity style={[styles.dangerBtn, styles.deleteBtn]} onPress={handleDeleteAccount}>
-              <Trash2 color={COLORS.danger} size={18} />
-              <Text style={styles.dangerBtnText}>Permanently Delete Account</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Account</Text>
+            <TouchableOpacity style={styles.accountRow} onPress={handleLogout}>
+              <LogOut color={colors.purple} size={20} />
+              <Text style={styles.accountText}>Log out</Text>
+              <ChevronRight color={colors.muted} size={18} />
+            </TouchableOpacity>
+            <View style={styles.divider} />
+            <TouchableOpacity style={styles.accountRow} onPress={handleDeleteAccount}>
+              <Trash2 color={colors.danger} size={20} />
+              <Text style={[styles.accountText, styles.dangerText]}>Delete account</Text>
+              <ChevronRight color={colors.muted} size={18} />
             </TouchableOpacity>
           </View>
-
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+      )}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.creamBg },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) + 15 : 10, paddingBottom: 15 },
-  backCircle: { backgroundColor: COLORS.white, width: 45, height: 45, borderRadius: 22.5, justifyContent: 'center', alignItems: 'center', elevation: 4 },
-  headerTitle: { fontSize: 24, fontWeight: '900', color: COLORS.primaryBlue },
-  scrollContent: { padding: 25, paddingBottom: 120 },
-  sectionCard: { backgroundColor: COLORS.white, borderRadius: 30, padding: 20, marginBottom: 25, elevation: 4 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  iconWrapper: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F3F1FB', justifyContent: 'center', alignItems: 'center' },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: COLORS.primaryBlue, marginLeft: 12 },
-  label: { fontSize: 13, fontWeight: '700', color: COLORS.softPurple, marginBottom: 8 },
-  input: { backgroundColor: COLORS.inputBg, padding: 15, borderRadius: 18, fontSize: 16, color: '#444', marginBottom: 15 },
-  primaryBtn: { flexDirection: 'row', backgroundColor: COLORS.primaryBlue, padding: 16, borderRadius: 20, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  btnText: { color: COLORS.white, fontWeight: '800', fontSize: 16 },
-  imagePickerContainer: { alignItems: 'center' },
-  imageWrapper: { width: 110, height: 110, borderRadius: 55, overflow: 'hidden', backgroundColor: COLORS.inputBg, marginBottom: 15, borderWidth: 3, borderColor: '#F3F1FB' },
-  previewImage: { width: '100%', height: '100%', resizeMode: 'cover' },
-  placeholderImage: { justifyContent: 'center', alignItems: 'center' },
-  buttonRow: { flexDirection: 'row', gap: 10 },
-  imagePickerBtn: { paddingVertical: 10, paddingHorizontal: 18, borderRadius: 12, backgroundColor: '#F3F1FB' },
-  imagePickerBtnText: { color: COLORS.primaryBlue, fontWeight: '700', fontSize: 14 },
-  savePhotoBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 12, backgroundColor: COLORS.success },
-  savePhotoBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
-  spotHint: { fontSize: 13, color: '#777', marginBottom: 8 },
-  spotCounter: { fontSize: 13, fontWeight: '700', color: COLORS.softPurple, marginBottom: 12 },
-  spotLimitText: { color: COLORS.danger },
-  spotRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.inputBg, padding: 14, borderRadius: 18, marginBottom: 10, borderWidth: 2, borderColor: 'transparent' },
-  spotRowSelected: { borderColor: COLORS.primaryBlue, backgroundColor: '#EEF1FB' },
-  spotInfo: { flex: 1 },
-  spotName: { fontSize: 15, fontWeight: '700', color: '#444' },
-  spotMeta: { fontSize: 12, color: '#888', marginTop: 2, textTransform: 'capitalize' },
-  btnDisabled: { opacity: 0.6 },
-  dangerColumn: { marginTop: 10, gap: 15, marginBottom: 30 },
-  dangerBtn: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 18, borderRadius: 22, borderWidth: 2, borderColor: COLORS.danger, gap: 10 },
-  dangerBtnText: { color: COLORS.danger, fontWeight: '800', fontSize: 16 },
-  logoutBtn: { backgroundColor: 'rgba(255, 107, 107, 0.05)', borderStyle: 'solid' },
-  deleteBtn: { borderStyle: 'dashed', opacity: 0.6 },
+  flex: { flex: 1 },
+  pending: { alignItems: 'center', gap: 16, paddingHorizontal: 20, paddingTop: 60 },
+  container: { flex: 1, backgroundColor: colors.cream },
+  content: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 130, gap: 16 },
+  card: { backgroundColor: colors.white, borderRadius: 24, padding: 16, gap: 12, ...shadow },
+  cardTitle: { fontSize: 16, fontWeight: '800', color: colors.heading },
+  photoRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  photo: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.chip, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  photoImage: { width: '100%', height: '100%' },
+  hint: { fontSize: 13, color: colors.muted },
+  limit: { color: colors.danger, fontWeight: '700' },
+  spotRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.field, padding: 12, borderRadius: 16, borderWidth: 1.5, borderColor: 'transparent' },
+  spotRowSelected: { borderColor: colors.accent, backgroundColor: colors.selected },
+  spotName: { fontSize: 14, fontWeight: '700', color: colors.ink },
+  spotMeta: { fontSize: 12, color: colors.muted, marginTop: 1, textTransform: 'capitalize' },
+  accountRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 },
+  accountText: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.ink },
+  dangerText: { color: colors.danger },
+  divider: { height: 1, backgroundColor: colors.border },
 });
 
 export default SettingScreen;

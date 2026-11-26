@@ -5,7 +5,7 @@
  */
 const { ApiError, forbidden, notFound, conflict, badRequest } = require('./errors');
 const { haversineKm } = require('./geo');
-const { validateCreateListing, validateUpdateListing, bookIdOf } = require('./validation');
+const { validateCreateListing, validateUpdateListing, assertPlaceCount, bookIdOf } = require('./validation');
 
 const VISIBLE_STATUSES = ['available', 'reserved'];
 const SPOT_CACHE_MS = 60000;
@@ -32,6 +32,29 @@ const toSpotDto = (spot, coords) => {
     dto.distanceKm = round2(haversineKm(coords, { lat: spot.lat, lng: spot.lng }));
   }
   return dto;
+};
+
+/** A listing's pinned locations, shaped like spots so clients can treat them alike. */
+const pinsToSpots = (listing, coords) =>
+  (listing.customSpots || []).map((pin, i) => ({
+    ...toSpotDto({ ...pin, id: `pin-${i + 1}`, type: 'other' }, coords),
+    custom: true,
+  }));
+
+/**
+ * Identifies a book across editions: Google Books gives every edition its own id, so owners
+ * are matched on title + first author. Must stay in step with the app's workKey().
+ */
+const workKey = (title, author) => {
+  const clean = s =>
+    String(s || '')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
+  const name = clean(title);
+  return name ? `${name}|${clean(String(author || '').split(',')[0])}` : null;
 };
 
 const createService = ({ store, bookProvider, now = Date.now }) => {
@@ -70,7 +93,10 @@ const createService = ({ store, bookProvider, now = Date.now }) => {
 
     return listings.map(l => {
       const owner = owners[l.ownerId] || {};
-      const itemSpots = l.spotIds.map(id => spotsById.get(id)).filter(Boolean).map(s => toSpotDto(s, coords));
+      const itemSpots = [
+        ...l.spotIds.map(id => spotsById.get(id)).filter(Boolean).map(s => toSpotDto(s, coords)),
+        ...pinsToSpots(l, coords),
+      ];
       const distances = itemSpots.map(s => s.distanceKm).filter(d => d !== undefined);
       return {
         id: l.id,
@@ -102,6 +128,81 @@ const createService = ({ store, bookProvider, now = Date.now }) => {
   };
 
   return {
+    // ---------------------------------------------------------------- availability
+    /**
+     * Every owned book with its owners and where each can meet: their preferred spots plus the
+     * spots and pins of their visible listings. Editions of one book are grouped together.
+     */
+    async availability() {
+      const [rows, listings, spots] = await Promise.all([
+        store.listOwnedBooks(),
+        store.listAllListings(),
+        getSpots(),
+      ]);
+      const owners = await store.getUsers(rows.map(r => r.ownerId));
+      const spotsById = new Map(spots.map(s => [s.id, s]));
+
+      // An old record without a title still joins its book through the shared id.
+      const keyById = new Map();
+      rows.forEach(r => {
+        const key = workKey(r.title, r.author);
+        if (key && !keyById.has(r.bookId)) keyById.set(r.bookId, key);
+      });
+
+      const works = new Map();
+      rows.forEach(r => {
+        const key = keyById.get(r.bookId) || `id:${r.bookId}`;
+        let work = works.get(key);
+        if (!work) {
+          work = { key, bookIds: new Set(), title: null, author: null, thumbnail: null, owners: new Map() };
+          works.set(key, work);
+        }
+        work.bookIds.add(r.bookId);
+        work.title = work.title || r.title || null;
+        work.author = work.author || r.author || null;
+        work.thumbnail = work.thumbnail || httpsUrl(r.thumbnail);
+        if (!work.owners.has(r.ownerId)) work.owners.set(r.ownerId, { listings: [] });
+        const listing = listings.find(l => l.ownerId === r.ownerId && l.bookId === r.bookId);
+        if (listing && VISIBLE_STATUSES.includes(listing.status)) work.owners.get(r.ownerId).listings.push(listing);
+      });
+
+      const ownerDto = (id, entry) => {
+        const user = owners[id] || {};
+        const places = new Map();
+        const spotIds = [
+          ...(Array.isArray(user.preferredSpots) ? user.preferredSpots : []),
+          ...entry.listings.flatMap(l => l.spotIds),
+        ];
+        spotIds.forEach(spotId => {
+          const spot = spotsById.get(spotId);
+          if (spot) places.set(spotId, toSpotDto(spot));
+        });
+        entry.listings.flatMap(l => pinsToSpots(l)).forEach(pin => {
+          const placeId = `pin-${pin.lat},${pin.lng}`;
+          places.set(placeId, { ...pin, id: placeId });
+        });
+        const statuses = entry.listings.map(l => l.status);
+        return {
+          id,
+          username: user.username || user.displayName || 'Reader',
+          photoURL: httpsUrl(user.photoURL),
+          listing: statuses.includes('available') ? 'available' : statuses[0] || null,
+          spots: Array.from(places.values()),
+        };
+      };
+
+      return {
+        works: Array.from(works.values()).map(w => ({
+          key: w.key,
+          bookIds: Array.from(w.bookIds),
+          title: w.title,
+          author: w.author,
+          thumbnail: w.thumbnail,
+          owners: Array.from(w.owners, ([id, entry]) => ownerDto(id, entry)),
+        })),
+      };
+    },
+
     // ------------------------------------------------------------------ locations
     async listSpots({ coords, type }) {
       const spots = (await getSpots()).filter(s => !type || s.type === type);
@@ -210,8 +311,8 @@ const createService = ({ store, bookProvider, now = Date.now }) => {
         if (filter === 'available') return l.status === 'available';
         if (filter === 'wishlist') return l.ownerId !== uid && wanted.has(l.bookId);
         if (filter === 'nearby') {
-          return l.spotIds.some(id => {
-            const s = spotsById.get(id);
+          const places = [...l.spotIds.map(id => spotsById.get(id)), ...(l.customSpots || [])];
+          return places.some(s => {
             return s && Number.isFinite(s.lat) && haversineKm(coords, { lat: s.lat, lng: s.lng }) <= radiusKm;
           });
         }
@@ -258,6 +359,15 @@ const createService = ({ store, bookProvider, now = Date.now }) => {
         items: await toFeedItems(matches, { uid, coords, wishlist: wanted }),
         nextCursor,
       };
+    },
+
+    /** Another reader's visible listings (their profile page), newest first. */
+    async userListings(uid, ownerId, { coords } = {}) {
+      const rows = (await store.listListingsByOwner(ownerId)).filter(l => VISIBLE_STATUSES.includes(l.status));
+      const alive = await withoutOrphans(rows);
+      alive.sort((a, b) => b.updatedAt - a.updatedAt);
+      const wishlist = new Set(await store.getWishlistBookIds(uid));
+      return toFeedItems(alive, { uid, coords, wishlist });
     },
 
     async myListings(uid, { coords } = {}) {
@@ -316,6 +426,7 @@ const createService = ({ store, bookProvider, now = Date.now }) => {
         condition: input.condition,
         exchange: input.exchange,
         spotIds: input.spotIds,
+        customSpots: input.customSpots,
         availableTimes: input.availableTimes,
         note: input.note,
         createdAt: t,
@@ -333,6 +444,9 @@ const createService = ({ store, bookProvider, now = Date.now }) => {
       if (!(await store.getMyBook(uid, current.bookId))) {
         await store.deleteListings([id]);
         throw notFound('listing_not_found', 'That listing no longer exists because the book left your library.');
+      }
+      if (patch.spotIds || patch.customSpots) {
+        assertPlaceCount(patch.spotIds ?? current.spotIds, patch.customSpots ?? current.customSpots ?? []);
       }
       if (patch.spotIds) await assertSpots(patch.spotIds);
 
@@ -354,4 +468,4 @@ const createService = ({ store, bookProvider, now = Date.now }) => {
   };
 };
 
-module.exports = { createService, listingId, toSpotDto };
+module.exports = { createService, listingId, toSpotDto, workKey };

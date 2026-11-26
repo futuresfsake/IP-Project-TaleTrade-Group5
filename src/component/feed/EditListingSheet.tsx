@@ -21,7 +21,11 @@ import {
   toggleInList,
 } from '../../services/feedHelpers';
 import type { ApiSpot, FeedItem, ListingPatch, ListingStatus } from '../../types';
+
+/** Pinned places are identified by the server as pin-1, pin-2, ... */
+const isPin = (id: string) => id.startsWith('pin-');
 import { AppButton, BookCover, Chip } from './ui';
+import { dialog } from '../ui/AppDialog';
 
 interface EditListingSheetProps {
   item: FeedItem | null;
@@ -52,15 +56,36 @@ const EditListingSheet = ({ item, spots, saving, onClose, onSave, onRemove }: Ed
 
   if (!item) return null;
 
-  const spotName = (id: string) => spots.find(s => s.id === id)?.name ?? item.spots.find(s => s.id === id)?.name ?? id;
+  const spotName = (id: string) => item.spots.find(s => s.id === id)?.name ?? spots.find(s => s.id === id)?.name ?? id;
   const addable = spots.filter(s => !spotIds.includes(s.id));
   const canAdd = spotIds.length < MAX_LISTING_SPOTS && addable.length > 0;
+
+  /** Closing with unsaved edits asks first. */
+  const requestClose = () => {
+    const changed =
+      status !== item.status ||
+      times.trim() !== item.availableTimes ||
+      spotIds.join(',') !== item.spots.map(s => s.id).join(',');
+    if (!changed) {
+      onClose();
+      return;
+    }
+    dialog.alert('Discard your changes?', 'This listing has not been saved.', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: onClose },
+    ]);
+  };
 
   const handleSave = () => {
     const patch: ListingPatch = {};
     if (status !== item.status) patch.status = status;
     const before = item.spots.map(s => s.id).join(',');
-    if (spotIds.join(',') !== before) patch.spotIds = spotIds;
+    if (spotIds.join(',') !== before) {
+      patch.spotIds = spotIds.filter(id => !isPin(id));
+      patch.customSpots = item.spots
+        .filter(s => s.custom && spotIds.includes(s.id))
+        .map(({ name, lat, lng }) => ({ name, lat, lng }));
+    }
     if (times.trim() !== item.availableTimes) patch.availableTimes = times.trim();
     if (Object.keys(patch).length === 0) {
       onClose();
@@ -70,14 +95,14 @@ const EditListingSheet = ({ item, spots, saving, onClose, onSave, onRemove }: Ed
   };
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
+    <Modal visible transparent animationType="slide" onRequestClose={requestClose} statusBarTranslucent>
+      <Pressable style={styles.scrim} onPress={requestClose} accessibilityLabel="Close" />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheetWrap} pointerEvents="box-none">
         <View style={styles.sheet} testID="edit-listing-sheet">
           <View style={styles.handle} />
           <View style={styles.titleRow}>
             <Text style={styles.title}>Edit listing</Text>
-            <TouchableOpacity accessibilityLabel="Close" onPress={onClose} style={styles.close}>
+            <TouchableOpacity accessibilityLabel="Close" onPress={requestClose} style={styles.close}>
               <X color={colors.purple} size={18} />
             </TouchableOpacity>
           </View>
@@ -128,9 +153,9 @@ const EditListingSheet = ({ item, spots, saving, onClose, onSave, onRemove }: Ed
                   onPress={() => setSpotIds(prev => toggleInList(prev, id).list)}
                   style={styles.spotChip}
                 >
-                  <MapPin color={colors.blue} size={14} />
+                  <MapPin color={colors.accent} size={14} />
                   <Text style={styles.spotChipText} numberOfLines={1}>{spotName(id)}</Text>
-                  {spotIds.length > 1 ? <X color={colors.blue} size={14} strokeWidth={2.4} /> : null}
+                  {spotIds.length > 1 ? <X color={colors.accent} size={14} strokeWidth={2.4} /> : null}
                 </TouchableOpacity>
               ))}
               {canAdd ? <Chip label="+ Add spot" selected={picking} onPress={() => setPicking(p => !p)} /> : null}
@@ -191,12 +216,12 @@ const styles = StyleSheet.create({
   },
   handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: 10 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  title: { fontSize: 22, fontWeight: '900', color: colors.ink },
+  title: { fontSize: 22, fontWeight: '900', color: colors.heading },
   close: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.chip, alignItems: 'center', justifyContent: 'center' },
   book: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.field, borderRadius: 16, padding: 10 },
   bookTitle: { fontSize: 15, fontWeight: '800', color: colors.ink },
   bookAuthor: { fontSize: 12, color: colors.muted },
-  section: { fontSize: 15, fontWeight: '800', color: colors.ink, marginTop: 16, marginBottom: 8 },
+  section: { fontSize: 15, fontWeight: '800', color: colors.heading, marginTop: 16, marginBottom: 8 },
   options: { gap: 8 },
   option: {
     flexDirection: 'row',
@@ -224,10 +249,10 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: colors.selected,
     borderWidth: 1.5,
-    borderColor: colors.blue,
+    borderColor: colors.accent,
     maxWidth: '100%',
   },
-  spotChipText: { fontSize: 13, fontWeight: '600', color: colors.blue, flexShrink: 1 },
+  spotChipText: { fontSize: 13, fontWeight: '600', color: colors.accent, flexShrink: 1 },
   hint: { fontSize: 12, color: colors.muted, marginTop: 6 },
   picker: { marginTop: 8, borderRadius: 16, backgroundColor: colors.field, padding: 6 },
   pickerRow: { paddingVertical: 10, paddingHorizontal: 12 },

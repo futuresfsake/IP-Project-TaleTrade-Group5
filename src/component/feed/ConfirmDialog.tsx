@@ -38,7 +38,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', paddingHorizontal: 32 },
   dialog: { backgroundColor: colors.white, borderRadius: 28, padding: 24, alignItems: 'center', gap: 8 },
   icon: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.dangerTint, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  title: { fontSize: 20, fontWeight: '800', color: colors.ink, textAlign: 'center' },
+  title: { fontSize: 20, fontWeight: '800', color: colors.heading, textAlign: 'center' },
   body: { fontSize: 14, color: colors.body, textAlign: 'center', lineHeight: 20, marginBottom: 12 },
   btn: { alignSelf: 'stretch' },
 });

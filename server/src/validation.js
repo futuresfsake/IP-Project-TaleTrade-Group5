@@ -8,6 +8,7 @@ const FILTERS = ['all', 'available', 'nearby', 'wishlist'];
 const MAX_SPOTS = 3;
 const MAX_TIMES = 80;
 const MAX_NOTE = 280;
+const MAX_PIN_NAME = 60;
 
 const isPlainObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -46,15 +47,45 @@ const bookIdOf = value => {
   return value;
 };
 
+/** Locations the owner pinned on the map: [{ name, lat, lng }], at most MAX_SPOTS. */
+const pinList = value => {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_SPOTS) {
+    throw badRequest(`customSpots must be an array of at most ${MAX_SPOTS} items.`);
+  }
+  return value.map(pin => {
+    if (!isPlainObject(pin)) throw badRequest('Each pinned location must be an object.');
+    const name = cleanText(pin.name, 'customSpots.name', MAX_PIN_NAME);
+    if (!name) throw badRequest('Each pinned location needs a name.');
+    const { lat, lng } = pin;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || !(Math.abs(lat) <= 90) || !(Math.abs(lng) <= 180)) {
+      throw badRequest('Each pinned location needs a valid lat and lng.');
+    }
+    return { name, lat, lng };
+  });
+};
+
+/** A listing needs 1 to MAX_SPOTS meeting places, curated and pinned together. */
+const assertPlaceCount = (spotIds, customSpots) => {
+  const total = spotIds.length + customSpots.length;
+  if (total < 1 || total > MAX_SPOTS) {
+    throw badRequest(`A listing needs between 1 and ${MAX_SPOTS} meetup places.`);
+  }
+};
+
 /** Validates a POST /v1/listings body. Returns a clean object or throws ApiError(400). */
 const validateCreateListing = body => {
   if (!isPlainObject(body)) throw badRequest('Request body must be a JSON object.');
+  const spotIds = body.spotIds === undefined ? [] : stringList(body.spotIds, 'spotIds', { min: 0, max: MAX_SPOTS });
+  const customSpots = pinList(body.customSpots);
+  assertPlaceCount(spotIds, customSpots);
   return {
     bookId: bookIdOf(body.bookId),
     status: body.status === undefined ? 'available' : oneOf(body.status, STATUSES, 'status'),
     condition: oneOf(body.condition, CONDITIONS, 'condition'),
     exchange: stringList(body.exchange, 'exchange', { min: 1, max: EXCHANGES.length, allowed: EXCHANGES }),
-    spotIds: stringList(body.spotIds, 'spotIds', { min: 1, max: MAX_SPOTS }),
+    spotIds,
+    customSpots,
     availableTimes: cleanText(body.availableTimes, 'availableTimes', MAX_TIMES),
     note: cleanText(body.note, 'note', MAX_NOTE),
   };
@@ -70,8 +101,9 @@ const validateUpdateListing = body => {
     patch.exchange = stringList(body.exchange, 'exchange', { min: 1, max: EXCHANGES.length, allowed: EXCHANGES });
   }
   if (body.spotIds !== undefined) {
-    patch.spotIds = stringList(body.spotIds, 'spotIds', { min: 1, max: MAX_SPOTS });
+    patch.spotIds = stringList(body.spotIds, 'spotIds', { min: 0, max: MAX_SPOTS });
   }
+  if (body.customSpots !== undefined) patch.customSpots = pinList(body.customSpots);
   if (body.availableTimes !== undefined) {
     patch.availableTimes = cleanText(body.availableTimes, 'availableTimes', MAX_TIMES);
   }
@@ -121,6 +153,7 @@ module.exports = {
   FILTERS,
   MAX_SPOTS,
   validateCreateListing,
+  assertPlaceCount,
   validateUpdateListing,
   parseCoords,
   parseFeedQuery,

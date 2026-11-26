@@ -5,6 +5,7 @@ const { createMemoryStore } = require('../src/store/memoryStore');
 const { normalizeVolume, createGoogleBooksProvider } = require('../src/bookProvider');
 const { parseFeedQuery, validateCreateListing } = require('../src/validation');
 const { haversineKm } = require('../src/geo');
+const { createMapTilerProvider } = require('../src/placeProvider');
 
 const SPOTS = [
   { id: 'ayala', name: 'Ayala Center Cebu', type: 'mall', city: 'Cebu City', address: 'Ayala, Cebu', lat: 10.3187, lng: 123.9053, openHours: '11:00 AM', active: true },
@@ -23,7 +24,7 @@ const dune = { id: 'dune', title: 'Dune', authors: ['Frank Herbert'], descriptio
 const servers = [];
 afterEach(() => Promise.all(servers.splice(0).map(s => new Promise(resolve => s.close(resolve)))));
 
-const setup = async ({ store: storeOpts = {}, provider, rateLimit } = {}) => {
+const setup = async ({ store: storeOpts = {}, provider, placeProvider, rateLimit } = {}) => {
   let t = 1000;
   const store = createMemoryStore({
     spots: SPOTS,
@@ -34,7 +35,7 @@ const setup = async ({ store: storeOpts = {}, provider, rateLimit } = {}) => {
     ...storeOpts,
   });
   const bookProvider = provider || { getBook: async id => (id === 'dune' ? dune : null) };
-  const app = createApp({ store, bookProvider, verifyToken, now: () => (t += 10), rateLimit });
+  const app = createApp({ store, bookProvider, placeProvider, verifyToken, now: () => (t += 10), rateLimit });
   const server = await new Promise(resolve => {
     const s = app.listen(0, () => resolve(s));
   });
@@ -222,6 +223,95 @@ describe('feed', () => {
     expect(res.json.items.map(i => i.book.id)).toEqual(['hobbit']);
     await new Promise(resolve => setImmediate(resolve));
     expect(ctx.store._listings().map(l => l.id)).toEqual(['maria_hobbit']);
+  });
+});
+
+describe('pinned locations', () => {
+  const pin = { name: 'Corner cafe', lat: 10.3186, lng: 123.9052 };
+
+  it('accepts a listing that only has a pinned location and returns it as a spot', async () => {
+    const { call } = await setup();
+    const res = await call('POST', '/v1/listings', { token: 'tok-maria', body: validListing({ spotIds: [], customSpots: [pin] }) });
+    expect(res.status).toBe(201);
+    expect(res.json.spots).toMatchObject([{ id: 'pin-1', name: 'Corner cafe', custom: true }]);
+    const nearby = await call('GET', '/v1/feed?filter=nearby&lat=10.3187&lng=123.9053');
+    expect(nearby.json.items.map(i => i.book.id)).toEqual(['dune']);
+  });
+
+  it('limits curated and pinned places together and validates pins', async () => {
+    const { call } = await setup();
+    const post = over => call('POST', '/v1/listings', { token: 'tok-maria', body: validListing(over) });
+    expect((await post({ spotIds: [], customSpots: [] })).status).toBe(400);
+    expect((await post({ spotIds: ['ayala', 'sm'], customSpots: [pin, pin] })).status).toBe(400);
+    expect((await post({ spotIds: [], customSpots: [{ ...pin, lat: 200 }] })).status).toBe(400);
+    expect((await post({ spotIds: [], customSpots: [{ ...pin, name: '  ' }] })).status).toBe(400);
+
+    await post({ spotIds: ['ayala'] });
+    const patch = body => call('PATCH', '/v1/listings/maria_dune', { token: 'tok-maria', body });
+    expect((await patch({ spotIds: [] })).status).toBe(400);
+    expect((await patch({ spotIds: [], customSpots: [pin] })).status).toBe(200);
+  });
+});
+
+describe('place names', () => {
+  const reply = features => ({ ok: true, json: async () => ({ features }) });
+
+  it('prefers a point of interest under the pin, otherwise the street and area', async () => {
+    const near = createMapTilerProvider({ apiKey: 'k', fetchImpl: async () => reply([{ text: 'Corner Cafe', center: [123.9, 10.3], place_type: ['poi'] }]) });
+    expect(await near.reverse({ lat: 10.3, lng: 123.9 })).toMatchObject({ name: 'Corner Cafe' });
+
+    const far = createMapTilerProvider({
+      apiKey: 'k',
+      fetchImpl: async url =>
+        String(url).includes('types=poi')
+          ? reply([{ text: 'Far Mall', center: [124.5, 10.9] }])
+          : reply([{ text: 'Osmena Blvd', place_type: ['address'] }, { text: 'Capitol', place_type: ['place'] }]),
+    });
+    expect(await far.reverse({ lat: 10.3, lng: 123.9 })).toMatchObject({ name: 'Osmena Blvd, Capitol' });
+  });
+
+  it('serves names through the API and reports when they are unavailable', async () => {
+    const placeProvider = { configured: true, reverse: async () => ({ name: 'Corner Cafe', address: null }) };
+    const ok = await setup({ placeProvider });
+    expect((await ok.call('GET', '/v1/places/reverse?lat=10.3&lng=123.9')).json.name).toBe('Corner Cafe');
+    expect((await ok.call('GET', '/v1/places/reverse')).status).toBe(400);
+    const off = await setup();
+    expect((await off.call('GET', '/v1/places/reverse?lat=10.3&lng=123.9')).status).toBe(503);
+  });
+});
+
+describe('reader listings', () => {
+  it('returns only a reader visible listings', async () => {
+    const { call } = await setup();
+    await call('POST', '/v1/listings', { token: 'tok-maria', body: validListing() });
+    await call('POST', '/v1/listings', { token: 'tok-maria', body: validListing({ bookId: 'hobbit', status: 'unavailable' }) });
+    const res = await call('GET', '/v1/users/maria/listings');
+    expect(res.json.items.map(i => [i.book.id, i.isMine])).toEqual([['dune', false]]);
+    expect((await call('GET', '/v1/users/nobody/listings')).json.items).toEqual([]);
+  });
+});
+
+describe('availability', () => {
+  it('groups editions of a book and lists each owner with every place they can meet', async () => {
+    const { call } = await setup({
+      store: {
+        users: { maria: { username: 'Maria', preferredSpots: ['sm'] }, juan: { username: 'Juan' } },
+        myBooks: {
+          maria: [book('dune', 'Dune', 'Frank Herbert')],
+          juan: [book('dune-2', 'DUNE', 'Frank Herbert, Other'), { bookId: 'old' }],
+        },
+      },
+    });
+    await call('POST', '/v1/listings', { token: 'tok-maria', body: validListing({ spotIds: [], customSpots: [{ name: 'Cafe', lat: 10.3, lng: 123.9 }] }) });
+    const { works } = (await call('GET', '/v1/availability')).json;
+
+    const dune = works.find(w => w.bookIds.includes('dune'));
+    expect(dune.bookIds.sort()).toEqual(['dune', 'dune-2']);
+    expect(dune.owners.map(o => o.id).sort()).toEqual(['juan', 'maria']);
+    const maria = dune.owners.find(o => o.id === 'maria');
+    expect(maria.listing).toBe('available');
+    expect(maria.spots.map(s => s.name)).toEqual(['SM City Cebu', 'Cafe']);
+    expect(works.find(w => w.bookIds.includes('old')).owners).toHaveLength(1);
   });
 });
 

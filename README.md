@@ -12,6 +12,7 @@ TaleTrade/
 ├── env.d.ts                 # Type declarations for the `@env` variables
 ├── firebase.json            # Points the Firebase CLI at firestore.rules
 ├── firestore.rules          # Firestore security rules (deployed manually)
+├── docs/OWN_API.md          # How the own API works
 ├── server/                  # TaleTrade's own REST API (books, locations, Feed). See server/README.md
 ├── src/
 │   ├── api/
@@ -40,17 +41,16 @@ TaleTrade/
 │   │   │   ├── CreateListingScreen.tsx # List a book
 │   │   │   └── ChooseSpotsScreen.tsx   # Pick meetup spots
 │   │   ├── map/
-│   │   │   └── MapScreen.tsx    # Map tab: meetup spots, spot sheet, center on me
+│   │   │   └── MapScreen.tsx    # Map screen: meetup spots, spot sheet, center on me
 │   │   ├── BookDetailScreen.tsx
 │   │   ├── GenreDetailScreen.tsx
 │   │   ├── HomeScreen.tsx
 │   │   ├── LaunchScreen.tsx
-│   │   ├── MyBooksScreen.tsx
+│   │   ├── LibraryScreen.tsx    # Library tab: My Books and Wishlist
 │   │   ├── PickAGenreScreen.tsx # Onboarding genre selection
 │   │   ├── ProfileScreen.tsx
 │   │   ├── SearchScreen.tsx
-│   │   ├── SettingScreen.tsx
-│   │   └── WishlistScreen.tsx
+│   │   └── SettingScreen.tsx
 │   ├── services/
 │   │   ├── apiClient.ts         # Authenticated client for TaleTrade's own API
 │   │   ├── authService.ts       # Firebase Auth (register/login)
@@ -179,6 +179,8 @@ Base URL: `https://www.googleapis.com/books/v1`
 
 ### TaleTrade API — Feed, Locations, Book Details (`feedService.ts` → `server/`)
 
+New here? Read [How the own API works](docs/OWN_API.md).
+
 TaleTrade's **own** REST API (full reference in [`server/README.md`](server/README.md)). The app sends the user's Firebase ID token as a bearer token via `apiClient.ts`.
 
 | Method | Endpoint | Description | Auth Required |
@@ -239,13 +241,13 @@ Collections: `Users/{uid}/myBooks/{bookId}`, `Users/{uid}/wishlist/{bookId}`, `b
 | `WRITE` | `updateBookStatus(bookId, status)` | Update the status of a book in inventory | Yes |
 | `DELETE` | `removeBookFromInventory(bookId)` | Remove a book from inventory and owner registry | Yes |
 
-### Firestore — Wishlist (inline in `WishlistScreen.tsx`)
+### Firestore — Wishlist (inline in `LibraryScreen.tsx`)
 
 Collection: `Users/{uid}/wishlist/{bookId}`
 
 | Method | Operation | Description | Auth Required |
 |--------|-----------|-------------|---------------|
-| `LISTEN` | `onSnapshot(Users/{uid}/wishlist)` | Real-time listener for wishlist updates | Yes |
+| `LISTEN` | `onSnapshot(Users/{uid}/wishlist)` | Real-time listener for wishlist updates (`LibraryScreen.tsx`) | Yes |
 | `DELETE` | `deleteDoc(Users/{uid}/wishlist/{bookId})` | Remove a book from the wishlist | Yes |
 
 ### Firestore — Meetup Spots (`map/meetupService.ts`)

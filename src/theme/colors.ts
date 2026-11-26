@@ -1,14 +1,16 @@
-// Design tokens for the Feed UI (mirrors the "TaleTrade UI v2" Figma page).
-// Purple is the primary action colour; blue stays for titles, links and selection.
+// Design tokens for the whole app. Purple is the primary colour: buttons, headings,
+// links and selection all use it, so every screen reads the same.
 export const colors = {
   primary: '#6C63A8',
-  blue: '#4A68BE',
+  heading: '#6C63A8',
+  /** Links and selection. */
+  accent: '#6C63A8',
   purple: '#7E6FB0',
   cream: '#F5E9CF',
   white: '#FFFFFF',
   field: '#F9F7F2',
   chip: '#F3F1FB',
-  selected: '#EEF1FB',
+  selected: '#EFEDF8',
   cover: '#E4E0EE',
   ink: '#33354D',
   body: '#555B6E',

@@ -54,6 +54,15 @@ export interface ApiSpot {
   safetyNote: string | null;
   distanceKm?: number;
   listingCount?: number;
+  /** True for a location the owner pinned on the map (not a curated spot). */
+  custom?: boolean;
+}
+
+/** A location pinned on the map. */
+export interface PinnedPlace {
+  name: string;
+  lat: number;
+  lng: number;
 }
 
 export interface FeedItem {
@@ -103,12 +112,33 @@ export interface ListingInput {
   condition: ListingCondition;
   exchange: ExchangeType[];
   spotIds: string[];
+  customSpots?: PinnedPlace[];
   availableTimes?: string;
   note?: string;
   status?: ListingStatus;
 }
 
 export type ListingPatch = Partial<Omit<ListingInput, 'bookId'>>;
+
+export interface BookOwner {
+  id: string;
+  username: string;
+  photoURL: string | null;
+  /** Their visible Feed listing for this book, if any. */
+  listing: ListingStatus | null;
+  /** Where they can meet: preferred spots, listing spots and pinned places. */
+  spots: ApiSpot[];
+}
+
+/** One book (all editions) with everyone who has it. */
+export interface BookWork {
+  key: string;
+  bookIds: string[];
+  title: string | null;
+  author: string | null;
+  thumbnail: string | null;
+  owners: BookOwner[];
+}
 
 export interface BookDetails {
   book: {

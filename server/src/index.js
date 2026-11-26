@@ -8,12 +8,14 @@ const { getAuth } = require('firebase-admin/auth');
 const { createApp } = require('./app');
 const { createFirestoreStore } = require('./store/firestoreStore');
 const { createGoogleBooksProvider } = require('./bookProvider');
+const { createMapTilerProvider } = require('./placeProvider');
 
 initializeApp({ credential: applicationDefault() });
 
 const app = createApp({
   store: createFirestoreStore(),
   bookProvider: createGoogleBooksProvider({ apiKey: process.env.GOOGLE_BOOKS_API_KEY }),
+  placeProvider: createMapTilerProvider({ apiKey: process.env.MAPTILER_API_KEY }),
   verifyToken: token => getAuth().verifyIdToken(token),
 });
 

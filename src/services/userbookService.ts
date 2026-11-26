@@ -1,4 +1,4 @@
-import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, writeBatch, serverTimestamp } from '@react-native-firebase/firestore';
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp } from '@react-native-firebase/firestore';
 import { getAuth } from '@react-native-firebase/auth';
 import { buildOwnerFields, getPreferredSpots } from './map/meetupService';
 import { deleteListing, listingIdFor } from './feedService';
@@ -101,6 +101,13 @@ export const addToWishlist = async (bookData: any) => {
     ...fields,
     addedAt: serverTimestamp(),
   });
+};
+
+export const removeFromWishlist = async (bookId: string) => {
+  const userId = getAuth().currentUser?.uid;
+  if (!userId) throw new Error("User not authenticated");
+
+  await deleteDoc(doc(getFirestore(), 'Users', userId, 'wishlist', bookId));
 };
 
 export const getBookOwners = async (bookId: string) => {

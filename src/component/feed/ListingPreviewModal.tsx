@@ -1,10 +1,10 @@
 // Shows a listing exactly as other readers see it in the Feed (used from "My listings").
 import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { X } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import type { FeedItem } from '../../types';
 import ListingCard from './ListingCard';
-import { AppButton } from './ui';
 
 interface ListingPreviewModalProps {
   item: FeedItem | null;
@@ -22,8 +22,15 @@ const ListingPreviewModal = ({ item, onClose, onEdit, onOpenBook }: ListingPrevi
       <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
       <View style={styles.center} pointerEvents="box-none">
         <View style={styles.panel} testID="listing-preview">
-          <Text style={styles.heading}>Your post</Text>
-          <Text style={styles.sub}>This is how readers see it in the Feed.</Text>
+          <View style={styles.head}>
+            <View style={styles.titles}>
+              <Text style={styles.heading}>Your post</Text>
+              <Text style={styles.sub}>This is how readers see it in the Feed.</Text>
+            </View>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" style={styles.close} onPress={onClose}>
+              <X color={colors.purple} size={18} />
+            </TouchableOpacity>
+          </View>
           <ScrollView showsVerticalScrollIndicator={false}>
             <ListingCard
               item={item}
@@ -34,7 +41,6 @@ const ListingPreviewModal = ({ item, onClose, onEdit, onOpenBook }: ListingPrevi
               onEdit={onEdit}
             />
           </ScrollView>
-          <AppButton variant="secondary" label="Close" onPress={onClose} style={styles.close} />
         </View>
       </View>
     </Modal>
@@ -45,9 +51,11 @@ const styles = StyleSheet.create({
   scrim: { ...(StyleSheet.absoluteFill as object), backgroundColor: colors.scrim },
   center: { flex: 1, justifyContent: 'center', paddingHorizontal: 16 },
   panel: { maxHeight: '88%', backgroundColor: colors.cream, borderRadius: 28, padding: 16, gap: 8 },
-  heading: { fontSize: 20, fontWeight: '900', color: colors.ink },
+  heading: { fontSize: 20, fontWeight: '900', color: colors.heading },
   sub: { fontSize: 13, color: colors.muted, marginBottom: 4 },
-  close: { marginTop: 8 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  titles: { flex: 1 },
+  close: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
 });
 
 export default ListingPreviewModal;

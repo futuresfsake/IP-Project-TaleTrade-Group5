@@ -1,5 +1,5 @@
 // Pure helpers for the Feed screens (kept free of React / Firebase so they are unit-testable).
-import type { ExchangeType, FeedItem, ListingCondition, ListingInput, ListingStatus } from '../types';
+import type { ExchangeType, FeedItem, ListingCondition, ListingInput, ListingStatus, PinnedPlace } from '../types';
 
 export const CONDITIONS: ListingCondition[] = ['like_new', 'good', 'fair', 'well_loved'];
 export const EXCHANGES: ExchangeType[] = ['trade', 'lend', 'give_away'];
@@ -70,6 +70,31 @@ export const availabilityToggle = (
   return { on: false, label: 'Hidden from Feed', next: 'available' };
 };
 
+export interface PillInfo {
+  label: string;
+  tone: ListingStatus;
+}
+
+/** The status shown under a book in My Books (null = not on the Feed). */
+export const listingPill = (status: ListingStatus | null): PillInfo => {
+  if (status === 'available') return { label: 'Listed · Available', tone: 'available' };
+  if (status === 'reserved') return { label: 'Listed · Reserved', tone: 'reserved' };
+  if (status === 'unavailable') return { label: 'Listed · Hidden', tone: 'unavailable' };
+  return { label: 'Not listed', tone: 'unavailable' };
+};
+
+/** How many other readers offer a wishlisted book at a nearby spot. */
+export const ownersPill = (count: number): PillInfo =>
+  count > 0
+    ? { label: `${count} ${count === 1 ? 'owner' : 'owners'} nearby`, tone: 'available' }
+    : { label: 'No owners nearby', tone: 'unavailable' };
+
+/** Newest first; an entry still waiting for its server timestamp counts as newest. */
+export const newestFirst = <T extends { addedAt?: { seconds?: number } | null }>(items: T[]): T[] => {
+  const when = (item: T) => item.addedAt?.seconds ?? Number.MAX_SAFE_INTEGER;
+  return [...items].sort((a, b) => when(b) - when(a));
+};
+
 /** Toggles `value` in a list of at most `max` items (selection unchanged, `limitReached`, when full). */
 export const toggleInList = <T>(
   list: T[],
@@ -95,6 +120,8 @@ export interface ListingForm {
   condition: ListingCondition | null;
   exchange: ExchangeType[];
   spotIds: string[];
+  /** Locations pinned on the map; they count towards the spot limit. */
+  pins?: PinnedPlace[];
   availableTimes: string;
   note: string;
 }
@@ -104,8 +131,9 @@ export const validateListingForm = (form: ListingForm): string | null => {
   if (!form.bookId) return 'Choose a book to list.';
   if (!form.condition) return 'Pick the book’s condition.';
   if (form.exchange.length === 0) return 'Choose how others can get it.';
-  if (form.spotIds.length === 0) return 'Pick at least one meetup spot.';
-  if (form.spotIds.length > MAX_LISTING_SPOTS) return `Pick at most ${MAX_LISTING_SPOTS} meetup spots.`;
+  const places = form.spotIds.length + (form.pins?.length ?? 0);
+  if (places === 0) return 'Pick at least one meetup spot.';
+  if (places > MAX_LISTING_SPOTS) return `Pick at most ${MAX_LISTING_SPOTS} meetup spots.`;
   if (form.note.length > MAX_NOTE_LENGTH) return `Notes can be up to ${MAX_NOTE_LENGTH} characters.`;
   if (form.availableTimes.length > MAX_TIMES_LENGTH) return `Times can be up to ${MAX_TIMES_LENGTH} characters.`;
   return null;
@@ -116,6 +144,7 @@ export const formToInput = (form: ListingForm): ListingInput => ({
   condition: form.condition as ListingCondition,
   exchange: form.exchange,
   spotIds: form.spotIds,
+  customSpots: form.pins ?? [],
   availableTimes: form.availableTimes.trim(),
   note: form.note.trim(),
 });
