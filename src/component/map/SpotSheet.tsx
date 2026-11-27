@@ -6,11 +6,12 @@ import { ChevronDown, ChevronUp, X } from 'lucide-react-native';
 import { getBooksAtSpot, groupBooksByBookId, filterBooks } from '../../services/map/meetupService';
 import type { GroupedBook } from '../../services/map/meetupService';
 import { getUsername } from '../../services/userService';
+import { getSpotListings } from '../../services/feedService';
 import { formatDistance } from '../../services/map/locationService';
 import type { MeetupSpot, SpotBook } from '../../types';
 
 const COLORS = {
-  primaryBlue: '#4A68BE',
+  primaryBlue: '#6C63A8',
   softPurple: '#7E6FB0',
   white: '#FFFFFF',
   inputBg: '#F9F7F2',
@@ -49,7 +50,21 @@ const SpotSheet = ({
     setLoading(true);
     setError(false);
     try {
-      setRows(await getBooksAtSpot(spot.id));
+      const [owned, listed] = await Promise.all([
+        getBooksAtSpot(spot.id),
+        // Feed posts can name spots their owner has not saved in Settings.
+        getSpotListings(spot.id).catch(() => []),
+      ]);
+      setRows([
+        ...owned,
+        ...listed.map(l => ({
+          bookId: l.book.id,
+          title: l.book.title,
+          author: l.book.author,
+          thumbnail: l.book.thumbnail,
+          ownerId: l.owner.id,
+        })),
+      ]);
     } catch {
       setError(true);
     } finally {

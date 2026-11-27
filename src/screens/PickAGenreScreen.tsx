@@ -1,17 +1,21 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  ScrollView, 
-  SafeAreaView,
-  ActivityIndicator, 
-  Alert
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  
 } from 'react-native';
-import { getAuth, updateProfile, reload } from '@react-native-firebase/auth';
+import { dialog } from '../component/ui/AppDialog';
+import { getAuth, updateProfile, reload, signOut } from '@react-native-firebase/auth';
 import { saveUserGenres } from '../services/genreService';
 import { getUsername } from '../services/userService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppButton, Chip } from '../component/feed/ui';
+import { colors } from '../theme/colors';
+
+const MIN_GENRES = 3;
 
 const GENRES = [
   "Contemporary", "Memoir", "Dystopian", "Self-Help", 
@@ -19,7 +23,8 @@ const GENRES = [
   "Thriller & Suspense", "Fantasy", "Mystery", "Historical Fiction"
 ];
 
-export default function PickAGenreScreen({ navigation }: any) {
+export default function PickAGenreScreen() {
+  const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -31,15 +36,23 @@ export default function PickAGenreScreen({ navigation }: any) {
     );
   };
 
+  // There is no previous screen during onboarding: leaving means signing out.
+  const handleLeave = () => {
+    dialog.alert('Sign out?', 'You can pick your genres the next time you log in.', [
+      { text: 'Stay', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => signOut(getAuth()) },
+    ]);
+  };
+
   const handleNext = async () => {
-    if (selected.length < 3) {
-      Alert.alert("Select at least 3 genres");
+    if (selected.length < MIN_GENRES) {
+      dialog.alert("Select at least 3 genres");
       return;
     }
 
     const user = getAuth().currentUser;
     if (!user) {
-      Alert.alert('Error', 'You must be signed in to save your genres.');
+      dialog.alert('Error', 'You must be signed in to save your genres.');
       return;
     }
 
@@ -67,110 +80,58 @@ export default function PickAGenreScreen({ navigation }: any) {
 
     } catch (error) {
       console.error("Genre Selection Error:", error);
-      Alert.alert("Error", "Failed to save preferences. Please try again.");
+      dialog.alert("Error", "Failed to save preferences. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
+  const ready = selected.length >= MIN_GENRES;
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.skipText}>Back</Text>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={handleLeave}>
+          <Text style={styles.leave}>Sign out</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.titleContainer}>
-        <Text style={styles.titleText}>Tell us your favorite</Text>
-        <View style={styles.underlineContainer}>
-          <Text style={styles.titleText}>genre/s</Text>
-          <View style={styles.underline} />
-        </View>
-        <Text style={styles.subtitle}>Choose 3 or more</Text>
-      </View>
+      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+        <Text style={styles.title}>What do you love to read?</Text>
+        <Text style={styles.subtitle}>Pick at least {MIN_GENRES}. We’ll tune your Home to match.</Text>
 
-      <ScrollView contentContainerStyle={styles.genreCloud} showsVerticalScrollIndicator={false}>
-        {GENRES.map((genre) => {
-          const isSelected = selected.includes(genre);
-          return (
-            <TouchableOpacity
-              key={genre}
-              onPress={() => toggleGenre(genre)}
-              style={[
-                styles.genreItem,
-                isSelected && styles.genreItemSelected
-              ]}
-              activeOpacity={0.7}
-            >
-              <Text style={[
-                styles.genreText,
-                isSelected && styles.genreTextSelected
-              ]}>
-                {genre}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+        <Text style={styles.progressText}>{selected.length} selected · {MIN_GENRES} minimum</Text>
+        <View style={styles.progress}>
+          {Array.from({ length: MIN_GENRES }, (_, i) => (
+            <View key={i} style={[styles.progressStep, i < selected.length && styles.progressDone]} />
+          ))}
+        </View>
+
+        <View style={styles.cloud}>
+          {GENRES.map((genre) => (
+            <Chip key={genre} label={genre} selected={selected.includes(genre)} onPress={() => toggleGenre(genre)} />
+          ))}
+        </View>
       </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity 
-          onPress={handleNext}
-          disabled={selected.length < 3 || loading}
-          style={[
-            styles.nextButton,
-            (selected.length < 3 || loading) && styles.buttonDisabled
-          ]}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFF" />
-          ) : (
-            <Text style={styles.nextButtonText}>Next</Text>
-          )}
-        </TouchableOpacity>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 24 }]}>
+        <AppButton label="Continue" onPress={handleNext} disabled={!ready} loading={loading} />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FDFCF0' },
-  header: { padding: 20 },
-  skipText: { color: '#6B7280', fontSize: 16 },
-  titleContainer: { alignItems: 'center', marginTop: 10, marginBottom: 30 },
-  titleText: { fontSize: 26, fontWeight: 'bold', color: '#1F2937' },
-  underlineContainer: { alignItems: 'center' },
-  underline: { height: 4, width: '100%', backgroundColor: '#8B5CF6', marginTop: -2 },
-  subtitle: { marginTop: 12, color: '#6B7280', fontSize: 16 },
-  genreCloud: { 
-    flexDirection: 'row', 
-    flexWrap: 'wrap', 
-    justifyContent: 'center', 
-    paddingHorizontal: 15 
-  },
-  genreItem: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFF',
-    margin: 6,
-  },
-  genreItemSelected: { 
-    backgroundColor: '#8B5CF6', 
-    borderColor: '#8B5CF6' 
-  },
-  genreText: { color: '#374151', fontSize: 15, fontWeight: '500' },
-  genreTextSelected: { color: '#FFF' },
-  footer: { padding: 25 },
-  nextButton: {
-    backgroundColor: '#8B5CF6',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: { backgroundColor: '#C4B5FD' },
-  nextButtonText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' }
+  container: { flex: 1, backgroundColor: colors.cream },
+  topBar: { alignItems: 'flex-end', paddingHorizontal: 20, paddingVertical: 12 },
+  leave: { fontSize: 15, fontWeight: '700', color: colors.accent },
+  body: { paddingHorizontal: 20, paddingBottom: 20 },
+  title: { fontSize: 30, fontWeight: '900', color: colors.heading },
+  subtitle: { fontSize: 15, color: colors.muted, marginTop: 8, lineHeight: 22 },
+  progressText: { fontSize: 13, fontWeight: '700', color: colors.purple, marginTop: 20, marginBottom: 8 },
+  progress: { flexDirection: 'row', gap: 6, marginBottom: 24 },
+  progressStep: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.white },
+  progressDone: { backgroundColor: colors.accent },
+  cloud: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  footer: { paddingHorizontal: 20, paddingTop: 16 },
 });

@@ -1,4 +1,4 @@
-import { chunk, tallySpotCounts, toggleSpotSelection, buildOwnerFields, computeMapView, tallyWishlistSpots, uniqueSpotIds, groupBooksByBookId, filterBooks } from '../src/services/map/meetupService';
+import { orderBookSpots, chunk, tallySpotCounts, toggleSpotSelection, buildOwnerFields, computeMapView, tallyWishlistSpots, uniqueSpotIds, groupBooksByBookId, filterBooks } from '../src/services/map/meetupService';
 
 const { slugify, partitionSpots } = require('../scripts/seedMeetupSpots');
 
@@ -21,6 +21,20 @@ describe('tallySpotCounts', () => {
   });
   it('ignores spot ids that were not requested', () => {
     expect(tallySpotCounts([{ spotIds: ['x'] }], ['a'])).toEqual({ a: 0 });
+  });
+});
+
+describe('orderBookSpots', () => {
+  const spot = (id: string) => ({
+    id, name: id, type: 'mall' as const, lat: 10, lng: 123, address: '', city: '', openHours: '', active: true,
+  });
+
+  it('puts listed spots first, without repeats or unknown ids', () => {
+    const out = orderBookSpots([spot('a'), spot('b'), spot('c')], ['c', 'x'], ['a', 'c', 'a']);
+    expect(out.map(s => s.id)).toEqual(['c', 'a']);
+  });
+  it('is empty when no spot offers the book', () => {
+    expect(orderBookSpots([spot('a')], [], [])).toEqual([]);
   });
 });
 

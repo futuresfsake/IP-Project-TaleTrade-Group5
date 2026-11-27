@@ -1,5 +1,95 @@
 # Changelog
 
+## 2026-11-27 — Review fixes
+
+- Delete account removes the user's Feed posts (`DELETE /v1/me/listings`, new); spot and book counts ignore listings whose book left the library.
+- Editions with curly apostrophes or dashes in the title match again.
+- Readers sharing one network no longer share a rate limit; `TRUST_PROXY` is available for hosting behind a proxy.
+
+Details: [docs/PR25_FIXES.md](docs/PR25_FIXES.md).
+
+## 2026-11-26 — Owner lists agree, map always on Book Detail
+
+- `GET /v1/availability` (new) is the single source for who has a book: Search, Home, Genre and Wishlist badges and Book Detail's owner list all use it. Different editions of a book (separate Google Books ids) are matched by title and first author; books missing an old owner record are included.
+- Meetup places now include pinned locations, so they count as nearby and appear on the map.
+- Book Detail always shows "Where to meet": this book's places, or the public meetup spots with a note when no owner has set one.
+
+## 2026-11-26 — Launch, map pins, Settings
+
+- Launch keeps the refreshed layout, with "Tap anywhere" instead of the two buttons.
+- Map markers are native views, so they are no longer clipped; dropped pins are numbered to match the list below the map.
+- Settings reloads when shown, restores saved values on discard, and cannot save before the profile has loaded (it could show empty fields and complain that the username was too short).
+
+## 2026-11-26 — Place names, confirmations, reader listings, Messages
+
+- A pinned location takes the name of the place on the map, or the address from `GET /v1/places/reverse` (new; needs `MAPTILER_API_KEY` on the server).
+- Risky actions ask first: removing a pin or a wishlist entry, hiding a listing, and leaving a form with unsaved changes.
+- The original tab bar style is back (name only on the selected tab), in purple, with Home, Feed, Messages, Library, Profile.
+- The original "Tap anywhere" Launch screen is back.
+- A reader's profile lists their visible listings (`GET /v1/users/:id/listings`, new).
+- New **Messages** tab (placeholder).
+
+## 2026-11-26 — Pinning, bookmarks, nearby badges and one visual style
+
+- **Pin a location:** on the meetup screen's map, tap anywhere to drop a named pin (or tap a marker to pick that spot). Listings accept `customSpots` through the API; pins count towards the limit of 3 and show on the post's map.
+- **Bookmarks** toggle, confirm with a message that links to Library → Wishlist, and the newest entry is listed first.
+- **Home** greets you by name with your profile photo and the search bar in the header; the "Meetup spots near you" card is gone. New "Available near you" row.
+- **"N nearby" / "N owners nearby"** on Home, Genre, Search and Wishlist. Nearby means your preferred spots, plus spots within 10 km if location access is already allowed.
+- Purple is the single main colour for headings, links and selection; every screen uses the same header; system pop-ups are replaced by the app's own dialog; the Library menu is a dropdown that includes **List on Feed**.
+
+## 2026-11-26 — UI refresh (Figma "TaleTrade v3")
+
+- **Library** tab replaces the My Books and Wishlist tabs (segmented control). My Books shows each book's listing status with a **List** shortcut and a menu (edit listing / remove); Wishlist shows how many other readers own each book.
+- Tab bar is Home, Feed, Library, Profile, with a label under every icon.
+- Redundant controls removed: the Feed composer card and per-post action row (own posts have **Edit**; the "Meet at" row opens the map), the header + on an empty Feed, the avatar contact badge, and the three separate Settings save buttons (now one **Save changes**).
+- Shared look for headers, cards, fields and buttons across sign-in, Home, Search, Genre, Book Detail, Profile and Settings. The Launch screen has explicit **Get started** / **I already have an account** buttons.
+
+## 2026-11-26 — Screen behaviour fixes
+
+- Confirming meetup spots returns to the form you were filling in (it opened a second, empty one).
+- Onboarding "Back" did nothing; it is now "Sign out" with a confirmation.
+- My Books reloads when opened. Search no longer shows results from older keystrokes, and one tap opens a result.
+- Contact links keep their capital letters. Profiles opened from the Feed show one header, and "Edit my meetup spots" has a working back button.
+- Books opened from the Feed show their description. Map pins and spot sheets include Feed posts.
+- Register's "Login" link goes back instead of stacking screens.
+
+## 2026-11-26 — Less crowded tab bar
+
+- The **Search** tab is gone. Home now has a search bar in place of the "Good Day" greeting; it opens the Search screen (with a back button and the keyboard ready).
+- The **Map** tab is gone too. The map is now a screen opened where it is useful: a "Meetup spots near you" card on Home, a "Where to meet" preview on Book Detail (replaces "View on map"; listed spots first, then owners' preferred spots), and the "Meet at" row or "Request meetup" on a Feed post.
+- The tab bar is Home, Feed, My Books, Wishlist, Profile.
+- Known limit: the spot sheet lists books from owners' preferred spots, so a spot chosen only on a Feed post may show no books there.
+
+## 2026-11-25 — Feed tab + TaleTrade API
+
+Readers can list books they own on a community **Feed**, edit availability and meetup locations, and browse what others near them are sharing. Book and location data for the Feed comes from TaleTrade's **own API** (`server/`), not directly from Google Books or MapTiler.
+
+### TaleTrade API (`server/`, new)
+
+- Express + Firebase Admin REST API under `/v1`: `/feed`, `/listings`, `/me/listings`, `/me/books`, `/spots`, `/spots/:id`, `/books/:id`. Firebase ID-token auth, per-user rate limiting, strict validation, consistent JSON errors. See `server/README.md`.
+- `GET /v1/books/:id` normalises Google Books (key stays server-side, cached, falls back to our own denormalised data) and adds community availability and pickup locations.
+- `GET /v1/spots` serves curated spots with server-side distance and listing counts.
+- Business rules are enforced server-side (book must be in the caller's library, 1–3 valid spots, one listing per book, owner-only edits).
+
+### App
+
+- **Feed tab** (new, after Search): Community (filters All / Available / Near me / Wishlist matches, pull to refresh, infinite scroll, save to wishlist, open book, owner profile, "Request meetup" opens the Map filtered to the book; your own posts appear too, with an Edit button) and My listings (counts, availability switch, tap a post to see it as readers do, Edit).
+- **List a book** screen (meetup spots are checkboxes you can uncheck), **Meetup spots** picker (list or pin on the map), **Edit listing** bottom sheet (availability, spots, times) and a remove-confirmation dialog, following the "TaleTrade UI v2 (Feed + refresh)" Figma page.
+- Primary buttons use the purple `#6C63A8`.
+
+### Data and rules
+
+- New `listings/{ownerUid}_{bookId}` collection, written only by the API (Admin SDK bypasses rules). `firestore.rules` is unchanged: unlisted paths are already denied to clients; an explicit deny block for `listings` is recommended. No new composite index is needed.
+- `removeBookFromInventory` also removes the book's listing; the API hides listings whose book left the library (also covers account deletion).
+
+### Config
+
+- New `.env` variable `TALETRADE_API_URL` (declared in `env.d.ts`, mocked in `__mocks__/env.js`).
+
+### Tests
+
+- `__tests__/feed.test.ts` (helpers, API client) and `server/__tests__/api.test.js` (auth, validation, listings, feed filters and pagination, orphan cleanup, locations, book details and fallback, rate limiting).
+
 ## 2026-11-24 — Meetup Points & Map tab
 
 Readers pick up to 3 public meetup places; a new **Map** tab shows those places and the books available at each. The map shows curated public places only — no user's location is stored or displayed. This replaces the earlier location-sharing design for BL-017/018/019 (see `BACKLOG.md`).

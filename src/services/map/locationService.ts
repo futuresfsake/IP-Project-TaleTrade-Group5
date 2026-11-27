@@ -67,6 +67,17 @@ export const requestLocationPermission = async (): Promise<LocationPermission> =
   return 'denied';
 };
 
+/** The position only if access was already granted: never shows a permission prompt. */
+export const getUserLocationIfAllowed = async (): Promise<Coords | null> => {
+  try {
+    if (Platform.OS !== 'android' || !(await hasLocationPermission())) return null;
+    const position = await LocationManager.getCurrentPosition();
+    return position ? { lat: position.coords.latitude, lng: position.coords.longitude } : null;
+  } catch {
+    return null;
+  }
+};
+
 /**
  * One-shot read of the device's last known position (no tracking, no background
  * updates). Resolves 'unavailable' when the device has no fix yet.

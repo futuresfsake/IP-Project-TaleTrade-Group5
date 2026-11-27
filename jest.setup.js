@@ -2,6 +2,7 @@
 jest.mock('@react-native-firebase/app', () => ({}));
 jest.mock('@react-native-firebase/auth', () => ({
   getAuth: jest.fn(() => ({ currentUser: null })),
+  getIdToken: jest.fn(() => Promise.resolve('test-token')),
   // Report "signed out" so the Auth stack renders.
   onAuthStateChanged: jest.fn((_auth, cb) => {
     cb(null);
@@ -40,4 +41,5 @@ jest.mock('@maplibre/maplibre-react-native', () => ({
   Map: 'Map',
   Camera: 'Camera',
   ViewAnnotation: 'ViewAnnotation',
+  Marker: 'Marker',
 }));

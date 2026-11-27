@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Linking,
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,  Linking,
 } from 'react-native';
-import { Map as MapView, Camera, ViewAnnotation } from '@maplibre/maplibre-react-native';
+import { dialog } from '../../component/ui/AppDialog';
+import { Map as MapView, Camera, Marker } from '@maplibre/maplibre-react-native';
 import type { CameraRef } from '@maplibre/maplibre-react-native';
 import { List, LocateFixed, MapPin, Star, X } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenHeader } from '../../component/feed/ui';
 import { getAuth } from '@react-native-firebase/auth';
 import { MAPTILER_API_KEY } from '@env';
 import {
@@ -13,13 +16,14 @@ import {
 } from '../../services/map/meetupService';
 import type { GroupedBook } from '../../services/map/meetupService';
 import SpotSheet from '../../component/map/SpotSheet';
+import { getSpots as getListedSpots } from '../../services/feedService';
 import SpotList from '../../component/map/SpotList';
 import { getUserLocation, haversineKm, sortByDistance } from '../../services/map/locationService';
 import type { Coords } from '../../services/map/locationService';
-import type { MeetupSpot } from '../../types';
+import type { MeetupSpot, PinnedPlace } from '../../types';
 
 const COLORS = {
-  primaryBlue: '#4A68BE',
+  primaryBlue: '#6C63A8',
   softPurple: '#7E6FB0',
   creamBg: '#F5E9CF',
   white: '#FFFFFF',
@@ -29,14 +33,19 @@ const COLORS = {
 };
 
 const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_API_KEY}`;
-// Keeps the sheet clear of the floating tab bar.
-const SHEET_BOTTOM = 100;
+// Gap between the bottom sheet and the edge of the screen.
+const SHEET_BOTTOM = 24;
 const MARKER_PRESS_GUARD_MS = 500;
 
 const MapScreen = ({ navigation, route }: any) => {
-  // Set by BookDetail's "View on map": only spots where someone owns this book are shown.
+  const insets = useSafeAreaInsets();
+  // Set by Book Detail and Feed posts: only the spots offering this book are shown.
   const filterBookId: string | undefined = route?.params?.bookId;
   const filterBookTitle: string | undefined = route?.params?.bookTitle;
+  // When the caller already knows which spots to show, they win over the owners lookup.
+  const filterSpotIds: string[] | undefined = route?.params?.spotIds;
+  // Places a Feed post's owner pinned on the map.
+  const pins: PinnedPlace[] = route?.params?.pins ?? [];
 
   const [spots, setSpots] = useState<MeetupSpot[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -72,12 +81,19 @@ const MapScreen = ({ navigation, route }: any) => {
       }
       const uid = getAuth().currentUser?.uid;
       const wishlist = uid ? await getWishlistBookIds(uid) : [];
-      const [activeSpots, availability] = await Promise.all([
+      const [activeSpots, availability, listed] = await Promise.all([
         getActiveSpots(),
         getSpotAvailability(wishlist, uid),
+        // Optional: the map still works when the TaleTrade API is unreachable.
+        getListedSpots().catch(() => []),
       ]);
+      // A pin counts at least the Feed posts at that spot, even if no owner saved it in Settings.
+      const merged = { ...availability.counts };
+      listed.forEach(s => {
+        merged[s.id] = Math.max(merged[s.id] ?? 0, s.listingCount ?? 0);
+      });
       setSpots(activeSpots);
-      setCounts(availability.counts);
+      setCounts(merged);
       setWishlistCounts(availability.wishlistCounts);
       setWishlistIds(wishlist);
       setError(null);
@@ -104,13 +120,18 @@ const MapScreen = ({ navigation, route }: any) => {
       setBookSpotIds(null);
       return;
     }
+    // A post with only pinned places has no curated spots to show.
+    if (filterSpotIds && (filterSpotIds.length > 0 || route?.params?.pins?.length)) {
+      setBookSpotIds(filterSpotIds);
+      return;
+    }
     getSpotIdsForBook(filterBookId)
       .then(ids => !cancelled && setBookSpotIds(ids))
       .catch(() => !cancelled && setBookSpotIds([]));
     return () => {
       cancelled = true;
     };
-  }, [filterBookId]);
+  }, [filterBookId, filterSpotIds, route?.params?.pins]);
 
   const locate = useCallback(async (userInitiated: boolean) => {
     const result = await getUserLocation();
@@ -126,19 +147,19 @@ const MapScreen = ({ navigation, route }: any) => {
     setLocStatus(result.status);
     if (!userInitiated) return;
     if (result.status === 'blocked') {
-      Alert.alert(
+      dialog.alert(
         'Location is turned off for TaleTrade',
         'Allow location in your phone settings to centre the map on you.',
         [{ text: 'Not now', style: 'cancel' }, { text: 'Open settings', onPress: () => Linking.openSettings() }],
       );
     } else if (result.status === 'denied') {
-      Alert.alert('Location not allowed', 'Allow location to centre the map on you and see distances.');
+      dialog.alert('Location not allowed', 'Allow location to centre the map on you and see distances.');
     } else {
-      Alert.alert("Can't find you yet", 'Make sure location is turned on on your phone, then try again.');
+      dialog.alert("Can't find you yet", 'Make sure location is turned on on your phone, then try again.');
     }
   }, []);
 
-  // Ask once when the Map tab first opens. Failure just leaves the default map.
+  // Ask once when the Map screen opens. Failure just leaves the default map.
   useEffect(() => {
     locate(false);
   }, [locate]);
@@ -151,7 +172,8 @@ const MapScreen = ({ navigation, route }: any) => {
     }
   }, [userPos, loading, filterBookId]);
 
-  const clearFilter = () => navigation.setParams({ bookId: undefined, bookTitle: undefined });
+  const clearFilter = () =>
+    navigation.setParams({ bookId: undefined, bookTitle: undefined, spotIds: undefined, pins: undefined });
 
   const openBook = (b: GroupedBook) => {
     // BookDetailScreen reads id, title, thumbnail and an authors ARRAY from bookData
@@ -190,36 +212,50 @@ const MapScreen = ({ navigation, route }: any) => {
     cameraRef.current?.flyTo({ center: [spot.lng, spot.lat], zoom: 15 });
   };
   const hasWishlistSpot = visibleSpots.some(s => (wishlistCounts[s.id] ?? 0) > 0);
-  const initialViewState = useMemo(() => computeMapView(visibleSpots), [visibleSpots]);
+  const initialViewState = computeMapView([...visibleSpots, ...pins]);
+
+  const header = (
+    <View style={{ paddingTop: insets.top }}>
+      <ScreenHeader title="Meetup spots" onBack={() => navigation.goBack()} />
+    </View>
+  );
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={COLORS.primaryBlue} />
+      <View style={styles.container}>
+        {header}
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={COLORS.primaryBlue} />
+        </View>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.center}>
+      <View style={styles.container}>
+        {header}
+        <View style={styles.center}>
         <Text style={styles.stateTitle}>Couldn't load the map</Text>
         <Text style={styles.stateText}>{error}</Text>
         <TouchableOpacity style={styles.retryBtn} onPress={() => loadSpots()}>
           <Text style={styles.retryText}>Try again</Text>
         </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
+      {header}
+      <View style={styles.map}>
       <MapView style={styles.map} mapStyle={MAP_STYLE} onPress={() => {
         if (Date.now() - lastMarkerPress.current > MARKER_PRESS_GUARD_MS) setSelected(null);
       }}>
         <Camera
           ref={cameraRef}
-          key={visibleSpots.map(s => s.id).join(',')}
+          key={[...visibleSpots.map(s => s.id), ...pins.map(p => `${p.lat},${p.lng}`)].join(',')}
           initialViewState={
             'bounds' in initialViewState
               ? { bounds: initialViewState.bounds, padding: { top: 80, right: 60, bottom: 200, left: 60 } }
@@ -227,14 +263,24 @@ const MapScreen = ({ navigation, route }: any) => {
           }
         />
         {userPos && (
-          <ViewAnnotation id="me" lngLat={[userPos.lng, userPos.lat]}>
+          <Marker id="me" lngLat={[userPos.lng, userPos.lat]}>
             <View style={styles.meDot} />
-          </ViewAnnotation>
+          </Marker>
         )}
+        {pins.map((p, i) => (
+          <Marker key={`pin-${i}`} id={`pin-${i}`} lngLat={[p.lng, p.lat]} anchor="top" offset={[0, -22]}>
+            <View style={styles.pinned}>
+              <View style={styles.marker}>
+                <MapPin color={COLORS.white} size={22} />
+              </View>
+              <Text style={styles.pinnedLabel} numberOfLines={1}>{p.name}</Text>
+            </View>
+          </Marker>
+        ))}
         {visibleSpots.map(spot => {
           const wanted = (wishlistCounts[spot.id] ?? 0) > 0;
           return (
-          <ViewAnnotation
+          <Marker
             key={spot.id}
             id={spot.id}
             lngLat={[spot.lng, spot.lat]}
@@ -243,13 +289,16 @@ const MapScreen = ({ navigation, route }: any) => {
               setSelected(spot);
             }}
           >
+            {/* Padding leaves room for the count badge inside the marker bounds. */}
+            <View style={styles.markerBox}>
             <View style={[styles.marker, wanted && styles.markerWanted]}>
               {wanted ? <Star color={COLORS.white} fill={COLORS.white} size={22} /> : <MapPin color={COLORS.white} size={22} />}
+            </View>
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{counts[spot.id] ?? 0}</Text>
               </View>
             </View>
-          </ViewAnnotation>
+          </Marker>
           );
         })}
       </MapView>
@@ -265,7 +314,7 @@ const MapScreen = ({ navigation, route }: any) => {
         </View>
       )}
 
-      {visibleSpots.length === 0 && (
+      {visibleSpots.length === 0 && pins.length === 0 && (
         <View style={styles.emptyBanner}>
           <Text style={styles.stateText}>
             {filterBookId && bookSpotIds
@@ -330,6 +379,7 @@ const MapScreen = ({ navigation, route }: any) => {
           onOpenOwner={openOwner}
         />
       )}
+      </View>
     </View>
   );
 };
@@ -342,17 +392,20 @@ const styles = StyleSheet.create({
   stateText: { fontSize: 14, color: '#777', textAlign: 'center', marginVertical: 8 },
   retryBtn: { marginTop: 12, backgroundColor: COLORS.primaryBlue, paddingVertical: 12, paddingHorizontal: 28, borderRadius: 20 },
   retryText: { color: COLORS.white, fontWeight: '800' },
-  emptyBanner: { position: 'absolute', top: 60, alignSelf: 'center', backgroundColor: COLORS.white, borderRadius: 20, paddingHorizontal: 20, elevation: 4 },
+  emptyBanner: { position: 'absolute', top: 70, alignSelf: 'center', backgroundColor: COLORS.white, borderRadius: 20, paddingHorizontal: 20, elevation: 4 },
   marker: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.primaryBlue, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: COLORS.white, elevation: 6 },
   meDot: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#2F80ED', borderWidth: 3, borderColor: COLORS.white, elevation: 6 },
-  fabColumn: { position: 'absolute', right: 16, top: 150, gap: 12 },
+  fabColumn: { position: 'absolute', right: 16, top: 112, gap: 12 },
   fab: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.white, justifyContent: 'center', alignItems: 'center', elevation: 6 },
   markerWanted: { backgroundColor: COLORS.gold },
-  filterChip: { position: 'absolute', top: 50, left: 20, right: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.primaryBlue, borderRadius: 20, paddingVertical: 10, paddingHorizontal: 16, elevation: 6 },
+  pinned: { alignItems: 'center', width: 140 },
+  markerBox: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center' },
+  pinnedLabel: { marginTop: 2, fontSize: 11, fontWeight: '800', color: '#33354D', backgroundColor: COLORS.white, borderRadius: 8, paddingHorizontal: 6, overflow: 'hidden' },
+  filterChip: { position: 'absolute', top: 12, left: 20, right: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.primaryBlue, borderRadius: 20, paddingVertical: 10, paddingHorizontal: 16, elevation: 6 },
   filterText: { flex: 1, color: COLORS.white, fontWeight: '800', marginRight: 10 },
-  legend: { position: 'absolute', top: 100, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.white, borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12, elevation: 4 },
+  legend: { position: 'absolute', top: 64, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.white, borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12, elevation: 4 },
   legendText: { fontSize: 12, fontWeight: '700', color: '#555' },
-  badge: { position: 'absolute', top: -8, right: -8, minWidth: 22, height: 22, borderRadius: 11, backgroundColor: COLORS.danger, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4, borderWidth: 2, borderColor: COLORS.white },
+  badge: { position: 'absolute', top: 0, right: 0, minWidth: 22, height: 22, borderRadius: 11, backgroundColor: COLORS.danger, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4, borderWidth: 2, borderColor: COLORS.white },
   badgeText: { color: COLORS.white, fontSize: 11, fontWeight: '800' },
 });
 

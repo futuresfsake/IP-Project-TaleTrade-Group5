@@ -7,14 +7,13 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
-// Added Star and Book to the imports
-import { Home, Search, User, Star, Book, MapPin } from 'lucide-react-native';
+import { Home, User, Book, Rss, MessageCircle } from 'lucide-react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 const { width } = Dimensions.get('window');
 
 const COLORS = {
-  primaryBlue: '#4A68BE',
+  primary: '#6C63A8',
   softPurple: '#7E6FB0',
   creamBg: '#F5E9CF',
   white: '#FFFFFF',
@@ -54,18 +53,15 @@ const TabBar = ({ state, descriptors, navigation }: BottomTabBarProps) => {
               strokeWidth: isFocused ? 2.5 : 2
             };
 
-            // Updated switch cases to match your TabNavigator.tsx names
             switch (route.name) {
               case 'Home':
                 return <Home {...iconProps} />;
-              case 'Search':
-                return <Search {...iconProps} />;
-              case 'My Books':
+              case 'Feed':
+                return <Rss {...iconProps} />;
+              case 'Messages':
+                return <MessageCircle {...iconProps} />;
+              case 'Library':
                 return <Book {...iconProps} />;
-              case 'Wishlist':
-                return <Star {...iconProps} />;
-              case 'Map':
-                return <MapPin {...iconProps} />;
               case 'Profile':
                 return <User {...iconProps} />;
               default:
@@ -85,7 +81,7 @@ const TabBar = ({ state, descriptors, navigation }: BottomTabBarProps) => {
                 isFocused && styles.activeTabItem
               ]}
             >
-              {renderIcon(isFocused ? COLORS.primaryBlue : COLORS.softPurple)}
+              {renderIcon(isFocused ? COLORS.primary : COLORS.softPurple)}
 
               {isFocused && (
                 <Text style={styles.label}>
@@ -113,11 +109,11 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     backgroundColor: COLORS.creamBg,
-    width: width * 0.92, // Increased width slightly to accommodate 5 icons better
+    width: width * 0.92, // Room for five tabs
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 35,
-    justifyContent: 'space-around', // Changed to space-around for even spacing with 5 items
+    justifyContent: 'space-around',
     alignItems: 'center',
     shadowColor: COLORS.softPurple,
     shadowOffset: { width: 0, height: 8 },
@@ -130,12 +126,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: 45,
-    paddingHorizontal: 8, // Reduced so 6 tabs (5 icons + 1 labelled) fit on ~360dp screens
+    paddingHorizontal: 8,
     borderRadius: 25,
   },
   activeTabItem: {
     backgroundColor: COLORS.white,
-    shadowColor: COLORS.primaryBlue,
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -143,9 +139,9 @@ const styles = StyleSheet.create({
   },
   label: {
     marginLeft: 6,
-    fontSize: 12, // Slightly smaller font to ensure labels fit on smaller screens
+    fontSize: 12,
     fontWeight: '700',
-    color: COLORS.primaryBlue,
+    color: COLORS.primary,
   },
 });
 

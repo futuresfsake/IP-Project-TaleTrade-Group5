@@ -1,6 +1,7 @@
-import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, writeBatch, serverTimestamp } from '@react-native-firebase/firestore';
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp } from '@react-native-firebase/firestore';
 import { getAuth } from '@react-native-firebase/auth';
 import { buildOwnerFields, getPreferredSpots } from './map/meetupService';
+import { deleteListing, listingIdFor } from './feedService';
 
 const extractBookFields = (bookData: any) => {
   const v = bookData.volumeInfo || bookData;
@@ -84,6 +85,10 @@ export const removeBookFromInventory = async (bookId: string) => {
   batch.delete(doc(db, 'bookOwners', bookId, 'owners', userId));
 
   await batch.commit();
+
+  // A removed book must not stay on the Feed. Best effort: if the API is unreachable the
+  // listing is hidden anyway (the API drops listings whose book left the library).
+  deleteListing(listingIdFor(userId, bookId)).catch(() => {});
 };
 
 export const addToWishlist = async (bookData: any) => {
@@ -96,6 +101,13 @@ export const addToWishlist = async (bookData: any) => {
     ...fields,
     addedAt: serverTimestamp(),
   });
+};
+
+export const removeFromWishlist = async (bookId: string) => {
+  const userId = getAuth().currentUser?.uid;
+  if (!userId) throw new Error("User not authenticated");
+
+  await deleteDoc(doc(getFirestore(), 'Users', userId, 'wishlist', bookId));
 };
 
 export const getBookOwners = async (bookId: string) => {

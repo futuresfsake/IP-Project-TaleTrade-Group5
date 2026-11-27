@@ -5,7 +5,7 @@ import { formatDistance } from '../../services/map/locationService';
 import type { MeetupSpot } from '../../types';
 
 const COLORS = {
-  primaryBlue: '#4A68BE',
+  primaryBlue: '#6C63A8',
   softPurple: '#7E6FB0',
   white: '#FFFFFF',
   inputBg: '#F9F7F2',
