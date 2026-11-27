@@ -16,6 +16,8 @@ import { getFirestore, doc, collection, getDocs, writeBatch } from '@react-nativ
 import { updateUserInDb, getUserProfile, updateUserBio, updateUserProfileImage, updateUserSocialLink } from '../services/userService';
 import { getActiveSpots, setPreferredSpots, toggleSpotSelection, MAX_PREFERRED_SPOTS } from '../services/map/meetupService';
 import type { MeetupSpot } from '../types';
+import { deleteMyListings } from '../services/feedService';
+import { ApiError } from '../services/apiClient';
 import { launchImageLibrary } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET } from '@env';
@@ -233,6 +235,18 @@ const SettingScreen = ({ navigation }: any) => {
           if (Date.now() - lastSignIn > 5 * 60 * 1000) {
             dialog.alert("Security Check", "Please log out and log back in before deleting.");
             return;
+          }
+
+          // Feed posts can only be removed by the API, and only while the account still exists,
+          // so they go first. If that fails, nothing has been deleted yet.
+          try {
+            await deleteMyListings();
+          } catch (error) {
+            // An app with no API address has no Feed to clean up.
+            if (!(error instanceof ApiError && error.code === 'not_configured')) {
+              dialog.alert("Could not delete account", "Your Feed posts could not be removed, so nothing was deleted. Check your connection and try again.");
+              return;
+            }
           }
 
           const db = getFirestore();

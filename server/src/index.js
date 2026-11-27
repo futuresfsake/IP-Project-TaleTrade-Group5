@@ -17,6 +17,7 @@ const app = createApp({
   bookProvider: createGoogleBooksProvider({ apiKey: process.env.GOOGLE_BOOKS_API_KEY }),
   placeProvider: createMapTilerProvider({ apiKey: process.env.MAPTILER_API_KEY }),
   verifyToken: token => getAuth().verifyIdToken(token),
+  trustProxy: Number(process.env.TRUST_PROXY) || 0,
 });
 
 const port = Number(process.env.PORT) || 3000;

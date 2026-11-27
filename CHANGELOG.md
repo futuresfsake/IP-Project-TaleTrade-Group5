@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-27 — Review fixes
+
+- Delete account removes the user's Feed posts (`DELETE /v1/me/listings`, new); spot and book counts ignore listings whose book left the library.
+- Editions with curly apostrophes or dashes in the title match again.
+- Readers sharing one network no longer share a rate limit; `TRUST_PROXY` is available for hosting behind a proxy.
+
+Details: [docs/PR25_FIXES.md](docs/PR25_FIXES.md).
+
 ## 2026-11-26 — Owner lists agree, map always on Book Detail
 
 - `GET /v1/availability` (new) is the single source for who has a book: Search, Home, Genre and Wishlist badges and Book Detail's owner list all use it. Different editions of a book (separate Google Books ids) are matched by title and first author; books missing an old owner record are included.

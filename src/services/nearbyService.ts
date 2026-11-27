@@ -38,7 +38,7 @@ export const workKey = (title?: string | null, author?: string | null): string |
       .toLowerCase()
       .normalize('NFKD')
       .replace(/[̀-ͯ]/g, '')
-      .replace(/[^a-z0-9À-￿]+/g, ' ')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
       .trim();
   const name = clean(title || '');
   return name ? `${name}|${clean((author || '').split(',')[0])}` : null;

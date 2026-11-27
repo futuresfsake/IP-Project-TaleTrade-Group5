@@ -115,6 +115,18 @@ describe('nearby books', () => {
     expect(nearby.countFor({ id: 'nope', title: 'Emma', author: 'Austen' })).toBe(0);
   });
 
+  it('strips punctuation from keys exactly as the server does', () => {
+    const { workKey: serverKey } = require('../server/src/service');
+    const titles = [
+      'Harry Potter and the Philosopher’s Stone',
+      'Catch—22 “Anniversary” Edition…',
+      'Les Misérables × Ōkami: 2nd ed.',
+      '人間失格。',
+    ];
+    titles.forEach(title => expect(workKey(title, 'J.K. Rowling')).toBe(serverKey(title, 'J.K. Rowling')));
+    expect(workKey(titles[0], '')).toBe('harry potter and the philosopher s stone|');
+  });
+
   it('labels wishlist availability and sorts newest first', () => {
     expect(ownersPill(1).label).toBe('1 owner nearby');
     expect(ownersPill(0).label).toBe('No owners nearby');

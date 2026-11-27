@@ -38,7 +38,8 @@ the app; map tiles come from MapTiler.
 
 1. The app gets the signed-in user's **Firebase ID token** (`src/services/apiClient.ts`).
 2. It sends `Authorization: Bearer <token>` to a `/v1/...` URL (12 s timeout).
-3. The server applies a **rate limit** (120 requests per minute, per IP and per user).
+3. The server applies a **rate limit**: 1200 requests per minute per IP address, then, once the user
+   is known, 120 per user.
 4. It **verifies the token** with Firebase Admin (`auth.js`). No valid token means `401`.
 5. It **validates the input** (`validation.js`); request bodies are limited to 10 KB.
 6. `service.js` applies the business rules and reads or writes data through a **store**.
@@ -75,6 +76,7 @@ data and no network.
 | `GET /v1/me/listings`, `/v1/me/books` | My listings, "List a book" | The user's listings and library |
 | `GET /v1/users/:id/listings` | A reader's profile | That reader's visible listings |
 | `POST`, `PATCH`, `DELETE /v1/listings` | Posting, editing, removing | Writes the `listings` collection |
+| `DELETE /v1/me/listings` | Delete account | Removes all of the user's listings |
 
 ## Three examples
 

@@ -17,8 +17,8 @@ makes TaleTrade's API the product surface and treats Google Books as just one up
 | Third-party key in the APK | The Google Books key lives only on the server. The Feed never needs it on the device. |
 | Third-party outage / quota | Book lookups are cached (10 min TTL) and fall back to the title/author/thumbnail we already store in `bookOwners`, so details still render when Google is down. Only a book we have never seen returns `502`. |
 | Business rules in the client | Rules live server-side and are enforced for everyone: you can only list a book that is in *your* library, max 3 meetup places, curated spots must be real and active, valid statuses/conditions, 280-char notes, one listing per user per book. Firestore rules forbid client writes to `listings`. |
-| Consistency with existing features | Listings are tied to `Users/{uid}/myBooks`. Removing a book (or deleting the account) hides its listing immediately: the API drops listings whose book left the library and cleans them up lazily. |
-| Abuse / cost | Per-IP and per-user rate limiting, 10 KB body limit, strict input validation, consistent JSON errors. |
+| Consistency with existing features | Listings are tied to `Users/{uid}/myBooks`. Removing a book hides its listing immediately: the API drops listings whose book left the library and cleans them up lazily. Deleting an account removes all of its listings first (`DELETE /v1/me/listings`). |
+| Abuse / cost | Rate limits per user (120 a minute) and per IP address (1200 a minute; set `TRUST_PROXY` behind a proxy), 10 KB body limit, strict input validation, consistent JSON errors. |
 
 ### Suggested next steps (not implemented)
 
@@ -102,6 +102,7 @@ npm test   # from the repository root; the server suite lives in server/__tests_
 | `POST` | `/v1/listings` | Create. Body: `bookId`, `condition` (`like_new`/`good`/`fair`/`well_loved`), `exchange[]` (`trade`/`lend`/`give_away`), `spotIds[]` and/or `customSpots[]` (`{ name, lat, lng }`, pinned on the map; 1–3 places in total), optional `availableTimes` (≤ 80), `note` (≤ 280), `status`. `201` with the feed item. Errors: `400`, `404 book_not_in_library`, `409 listing_exists`. |
 | `PATCH` | `/v1/listings/:id` | Owner only. Any subset of the create fields except `bookId`; `403` for other users. |
 | `DELETE` | `/v1/listings/:id` | Owner only; idempotent for your own ids. `204`. |
+| `DELETE` | `/v1/me/listings` | Removes all of your listings, hidden ones included (used by Delete account). `204`. |
 
 A **feed item**:
 

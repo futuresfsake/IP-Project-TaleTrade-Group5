@@ -12,22 +12,39 @@ const TYPES = ['mall', 'library', 'bookstore', 'cafe', 'campus', 'other'];
 
 const wrap = handler => (req, res, next) => Promise.resolve(handler(req, res)).catch(next);
 
+// Per minute, per address. Many readers can share one (campus Wi-Fi), so it sits well above
+// the per-user limit.
+const IP_LIMIT = 1200;
+
 /**
  * Builds the Express app. Dependencies are injected:
  *   store         - data layer (firestoreStore in production, memoryStore in tests)
  *   bookProvider  - { getBook(id) } upstream book metadata
  *   verifyToken   - (idToken) => Promise<{ uid }>; Firebase Admin's verifyIdToken in production
+ *   rateLimit     - per-user limiter options; ipRateLimit - the pre-auth, per-address ones
+ *   trustProxy    - number of reverse proxies in front of the server (0 when exposed directly)
  */
-const createApp = ({ store, bookProvider, placeProvider, verifyToken, now = Date.now, rateLimit = {} }) => {
+const createApp = ({
+  store,
+  bookProvider,
+  placeProvider,
+  verifyToken,
+  now = Date.now,
+  rateLimit = {},
+  ipRateLimit = {},
+  trustProxy = 0,
+}) => {
   const service = createService({ store, bookProvider, now });
   const app = express();
   app.disable('x-powered-by');
+  // Behind a proxy, req.ip is the proxy's address unless Express is told to look past it.
+  if (trustProxy > 0) app.set('trust proxy', trustProxy);
   app.use(express.json({ limit: '10kb' }));
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
   const v1 = express.Router();
-  v1.use(createRateLimiter({ now, ...rateLimit })); // coarse per-IP guard before auth work
+  v1.use(createRateLimiter({ now, limit: IP_LIMIT, ...ipRateLimit })); // coarse per-IP guard before auth work
   v1.use(createAuthMiddleware(verifyToken));
   v1.use(createRateLimiter({ now, ...rateLimit })); // per-user guard once the uid is known
 
@@ -87,7 +104,12 @@ const createApp = ({ store, bookProvider, placeProvider, verifyToken, now = Date
     res.json({ items: await service.myBooks(req.user.uid) });
   }));
 
-  v1.post('/listings', wrap(async (req, res) => {
+  v1.delete('/me/listings', wrap(async (req, res) => {
+    await service.deleteMyListings(req.user.uid);
+    res.status(204).end();
+  }));
+
+  v1.post('/listings',wrap(async (req, res) => {
     res.status(201).json(await service.createListing(req.user.uid, req.body));
   }));
 

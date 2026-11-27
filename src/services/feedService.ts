@@ -46,6 +46,9 @@ export const updateListing = (id: string, patch: ListingPatch) =>
 export const deleteListing = (id: string) =>
   apiRequest<void>('DELETE', `/v1/listings/${encodeURIComponent(id)}`);
 
+/** Removes all of the signed-in user's listings, hidden ones included. */
+export const deleteMyListings = () => apiRequest<void>('DELETE', '/v1/me/listings');
+
 /** The id the API gives a user's listing for a book, so it can be removed without a lookup. */
 export const listingIdFor = (uid: string, bookId: string) => `${uid}_${bookId}`;
 

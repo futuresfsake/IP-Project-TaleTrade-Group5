@@ -206,12 +206,11 @@ const createService = ({ store, bookProvider, now = Date.now }) => {
     // ------------------------------------------------------------------ locations
     async listSpots({ coords, type }) {
       const spots = (await getSpots()).filter(s => !type || s.type === type);
-      const counts = await Promise.all(
-        spots.map(async s => {
-          const rows = await store.listListingsBySpot(s.id);
-          return rows.filter(l => l.status === 'available').length;
-        }),
-      );
+      const perSpot = await Promise.all(spots.map(s => store.listListingsBySpot(s.id)));
+      // A listing can name several spots: check each one once for a book that left its owner's library.
+      const available = new Map(perSpot.flat().filter(l => l.status === 'available').map(l => [l.id, l]));
+      const alive = new Set((await withoutOrphans(Array.from(available.values()))).map(l => l.id));
+      const counts = perSpot.map(rows => rows.filter(l => alive.has(l.id)).length);
       const dtos = spots.map((s, i) => ({ ...toSpotDto(s, coords), listingCount: counts[i] }));
       return dtos.sort((a, b) =>
         coords ? (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity) : a.name.localeCompare(b.name),
@@ -273,11 +272,12 @@ const createService = ({ store, bookProvider, now = Date.now }) => {
         }
       }
 
-      const [ownerCount, listings, spots] = await Promise.all([
+      const [ownerCount, rows, spots] = await Promise.all([
         store.countOwners(id),
         store.listListingsByBook(id),
         getSpots(),
       ]);
+      const listings = await withoutOrphans(rows);
       const visible = listings.filter(l => VISIBLE_STATUSES.includes(l.status));
       const perSpot = new Map();
       visible.forEach(l => l.spotIds.forEach(spotId => perSpot.set(spotId, (perSpot.get(spotId) || 0) + 1)));
@@ -453,6 +453,12 @@ const createService = ({ store, bookProvider, now = Date.now }) => {
       const next = { ...patch, updatedAt: now() };
       await store.updateListing(id, next);
       return (await toFeedItems([{ ...current, ...next }], { uid }))[0];
+    },
+
+    /** Removes every listing the caller owns, hidden ones included (used by account deletion). */
+    async deleteMyListings(uid) {
+      const mine = await store.listListingsByOwner(uid);
+      await store.deleteListings(mine.map(l => l.id));
     },
 
     /** Idempotent for the caller's own ids: deleting an already-removed listing succeeds. */

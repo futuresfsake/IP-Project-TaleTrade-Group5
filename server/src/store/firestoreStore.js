@@ -115,10 +115,12 @@ const createFirestoreStore = (db = getFirestore()) => {
     },
 
     async deleteListings(ids) {
-      if (ids.length === 0) return;
-      const batch = db.batch();
-      ids.forEach(id => batch.delete(listings.doc(id)));
-      await batch.commit();
+      // A Firestore batch takes at most 500 writes.
+      for (let i = 0; i < ids.length; i += 400) {
+        const batch = db.batch();
+        ids.slice(i, i + 400).forEach(id => batch.delete(listings.doc(id)));
+        await batch.commit();
+      }
     },
   };
 };

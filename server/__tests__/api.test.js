@@ -24,7 +24,7 @@ const dune = { id: 'dune', title: 'Dune', authors: ['Frank Herbert'], descriptio
 const servers = [];
 afterEach(() => Promise.all(servers.splice(0).map(s => new Promise(resolve => s.close(resolve)))));
 
-const setup = async ({ store: storeOpts = {}, provider, placeProvider, rateLimit } = {}) => {
+const setup = async ({ store: storeOpts = {}, provider, placeProvider, rateLimit, ipRateLimit, trustProxy } = {}) => {
   let t = 1000;
   const store = createMemoryStore({
     spots: SPOTS,
@@ -35,18 +35,18 @@ const setup = async ({ store: storeOpts = {}, provider, placeProvider, rateLimit
     ...storeOpts,
   });
   const bookProvider = provider || { getBook: async id => (id === 'dune' ? dune : null) };
-  const app = createApp({ store, bookProvider, placeProvider, verifyToken, now: () => (t += 10), rateLimit });
+  const app = createApp({ store, bookProvider, placeProvider, verifyToken, now: () => (t += 10), rateLimit, ipRateLimit, trustProxy });
   const server = await new Promise(resolve => {
     const s = app.listen(0, () => resolve(s));
   });
   servers.push(server);
   const { port } = server.address();
 
-  const call = (method, path, { token = 'tok-juan', body, rawBody } = {}) =>
+  const call = (method, path, { token = 'tok-juan', body, rawBody, headers = {} } = {}) =>
     new Promise((resolve, reject) => {
       const payload = rawBody !== undefined ? rawBody : body !== undefined ? JSON.stringify(body) : undefined;
       const req = http.request(
-        { port, method, path, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(payload ? { 'content-type': 'application/json' } : {}) } },
+        { port, method, path, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(payload ? { 'content-type': 'application/json' } : {}), ...headers } },
         res => {
           let data = '';
           res.on('data', c => (data += c));
@@ -87,6 +87,63 @@ describe('auth', () => {
     const res = await call('GET', '/v1/me/books');
     expect(res.status).toBe(429);
     expect(res.headers['retry-after']).toBeDefined();
+  });
+  it('lets readers who share an address each use their own limit', async () => {
+    const { call } = await setup();
+    const statuses = [];
+    for (let i = 0; i < 100; i += 1) {
+      statuses.push((await call('GET', '/v1/me/books', { token: 'tok-maria' })).status);
+      statuses.push((await call('GET', '/v1/me/books', { token: 'tok-juan' })).status);
+    }
+    expect(statuses.filter(s => s !== 200)).toEqual([]);
+  });
+  it('still caps one address before checking tokens', async () => {
+    const { call } = await setup({ ipRateLimit: { limit: 2 } });
+    await call('GET', '/v1/me/books', { token: 'nope' });
+    await call('GET', '/v1/me/books', { token: 'nope' });
+    expect((await call('GET', '/v1/me/books', { token: 'nope' })).status).toBe(429);
+  });
+  it('tells addresses apart behind a trusted proxy only', async () => {
+    const from = ip => ({ headers: { 'x-forwarded-for': ip } });
+    const proxied = await setup({ ipRateLimit: { limit: 1 }, trustProxy: 1 });
+    expect((await proxied.call('GET', '/v1/me/books', from('203.0.113.1'))).status).toBe(200);
+    expect((await proxied.call('GET', '/v1/me/books', from('203.0.113.2'))).status).toBe(200);
+    const direct = await setup({ ipRateLimit: { limit: 1 } });
+    expect((await direct.call('GET', '/v1/me/books', from('203.0.113.1'))).status).toBe(200);
+    expect((await direct.call('GET', '/v1/me/books', from('203.0.113.2'))).status).toBe(429);
+  });
+});
+
+describe('account cleanup', () => {
+  it('removes every listing of the caller, hidden ones included, and nobody else’s', async () => {
+    const { call, store } = await setup();
+    await call('POST', '/v1/listings', { token: 'tok-maria', body: validListing() });
+    await call('POST', '/v1/listings', { token: 'tok-maria', body: validListing({ bookId: 'hobbit', status: 'unavailable' }) });
+    await call('POST', '/v1/listings', { token: 'tok-juan', body: validListing({ bookId: 'normal' }) });
+    expect((await call('DELETE', '/v1/me/listings', { token: 'tok-maria' })).status).toBe(204);
+    expect(store._listings().map(l => l.ownerId)).toEqual(['juan']);
+    expect((await call('DELETE', '/v1/me/listings', { token: 'tok-maria' })).status).toBe(204);
+  });
+  it('requires a token', async () => {
+    const { call } = await setup();
+    expect((await call('DELETE', '/v1/me/listings', { token: null })).status).toBe(401);
+  });
+  it('leaves listings whose book left the library out of spot counts', async () => {
+    const { call, store } = await setup();
+    await call('POST', '/v1/listings', { token: 'tok-maria', body: validListing({ spotIds: ['ayala', 'sm'] }) });
+    store._removeMyBook('maria', 'dune');
+    const spots = (await call('GET', '/v1/spots')).json.items;
+    expect(spots.map(s => s.listingCount)).toEqual([0, 0, 0]);
+    expect(store._listings()).toEqual([]);
+  });
+  it('leaves them out of book details too', async () => {
+    const { call, store } = await setup();
+    await call('POST', '/v1/listings', { token: 'tok-maria', body: validListing() });
+    store._removeMyBook('maria', 'dune');
+    const res = await call('GET', '/v1/books/dune', { token: 'tok-maria' });
+    expect(res.json.community).toMatchObject({ listingCount: 0, availableCount: 0 });
+    expect(res.json.availableAt).toEqual([]);
+    expect(res.json.myListing).toBeNull();
   });
 });
 
